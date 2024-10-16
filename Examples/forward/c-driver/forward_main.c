@@ -447,7 +447,7 @@ XilVitisNetP4ReturnType example_log_info(XilVitisNetP4EnvIf *EnvIfPtr, const cha
         return XIL_VITIS_NET_P4_GENERAL_ERR_NULL_PARAM;
     }
 
-    printf(MessagePtr);
+    printf("%s", MessagePtr);
 
     return XIL_VITIS_NET_P4_SUCCESS;
 }
