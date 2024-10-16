@@ -3,8 +3,8 @@
 EXAMPLE_OBJ=forward calc advCalc
 QSPI=false
 SHELL := /bin/bash
-VIVADO_TARGET_VER=2021.2
-VIVADO_VER=$(shell vivado -version | grep -o '[^v][0-9]*\.[0-9]')
+VIVADO_TARGET_VER=2023.1
+VIVADO_VER=$(shell vivado -version | grep -oP 'v\K[0-9]+\.[0-9]+')
 DIST_DIR=dist
 
 
@@ -12,7 +12,7 @@ DIST_DIR=dist
 TCL_ARGS_LIST=board tag build_timestamp impl synth_ip post_impl user_plugin user_build_dir num_cmac_port num_phys_func
 SYN_ARGS_LIST=impl synth_ip post_impl
 if_synth=1
-board=au280
+board=au55c
 build_timestamp=$(shell date +%y%m%d%H%M)
 num_cmac_port=2
 num_phys_func=2
@@ -42,8 +42,10 @@ $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 		@[ -d '$(DIST_APP_DIR)' ] || mkdir -p $(DIST_APP_DIR); \
 		cp -r $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.gen/sources_1/ip/vitis_net_p4_0/src/sw/drivers $(DIST_APP_DIR)/; \
 		cd $(DIST_APP_DIR)/drivers && make; \
+		cd -; \
 		cp -r Examples/$@/c-driver/* $(DIST_APP_DIR)/drivers/install/; \
 		cd $(DIST_APP_DIR)/drivers/install && make; \
+		cd -; \
 		cp $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.runs/impl_1/open_nic_shell.mcs $(DIST_APP_DIR)/$@.mcs; \
 	}; \
 	fi
