@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-EXAMPLE_OBJ=forward calc advCalc
+EXAMPLE_OBJ=forward calc advCalc vitisalveo
 QSPI=false
 SHELL := /bin/bash
 VIVADO_TARGET_VER=2023.1
@@ -14,16 +14,16 @@ SYN_ARGS_LIST=impl synth_ip post_impl
 if_synth=1
 board=au55c
 build_timestamp=$(shell date +%y%m%d%H%M)
-num_cmac_port=2
+num_cmac_port=1
 num_phys_func=2
 
-# user_build_dir must be full path. Use build_dir to give the relative path 
+# user_build_dir must be full path. Use build_dir to give the relative path
 build_dir=build
 cur_dir=$(shell pwd)
 user_build_dir=$(cur_dir)/$(build_dir)
 
 
-all: $(EXAMPLE_OBJ) 
+all: $(EXAMPLE_OBJ)
 $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 	$(eval tag=$@_$(build_timestamp))
 	$(eval user_plugin=../../Examples/$@)
@@ -33,31 +33,43 @@ $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 	$(eval TCL_ARGS=$(foreach arg, $(TCL_ARGS_LIST), -$(arg) $($(arg))))
 	$(info TCL_ARGS=$(TCL_ARGS))
 
+	# Add Fast Compile mode to speed up synthesis
+	$(eval TCL_ARGS += -compile_mode FastCompile)
+
+	# Enable multi-threaded synthesis (adjust '4' to the number of CPU cores you want to use)
+	$(eval TCL_ARGS += -jobs 16)
+
 	#build
-	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir) 
+	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir)
 	cd open-nic-shell/script && vivado -mode batch -source build.tcl -tclargs $(TCL_ARGS) | tee $(cur_dir)/build_$(tag).log
 
-	@if [ $(if_synth) = 1 ]; then { \
+	#@if [ $(if_synth) = 1 ]; then { \
 		echo "Condition is true"; \
-		@[ -d '$(DIST_APP_DIR)' ] || mkdir -p $(DIST_APP_DIR); \
-		cp -r $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.gen/sources_1/ip/vitis_net_p4_0/src/sw/drivers $(DIST_APP_DIR)/; \
-		cd $(DIST_APP_DIR)/drivers && make; \
-		cd -; \
-		cp -r Examples/$@/c-driver/* $(DIST_APP_DIR)/drivers/install/; \
-		cd $(DIST_APP_DIR)/drivers/install && make; \
-		cd -; \
-		cp $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.runs/impl_1/open_nic_shell.mcs $(DIST_APP_DIR)/$@.mcs; \
-	}; \
-	fi
+
+		#@[ -d '$(DIST_APP_DIR)' ] || mkdir -p $(DIST_APP_DIR); \
+		#cp -r $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.gen/sources_1/ip/#vitis_net_p4_0/src/sw/drivers $(DIST_APP_DIR)/; \
+		#cd $(DIST_APP_DIR)/drivers && make; \
+		#cd -; \
+		#cp -r Examples/$@/c-driver/* $(DIST_APP_DIR)/drivers/install/; \
+		#cd $(DIST_APP_DIR)/drivers/install && make; \
+		#cd -; \
+		#cp $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.runs/impl_1/open_nic_shell.mcs $(DIST_APP_DIR)/$@.mcs; \
+
+	#}; \
+	#fi
 
 shell: CHECK_VIVADO_VER
 	$(eval tag=$@_$(build_timestamp))
 	$(eval DIST_APP_DIR=$(DIST_DIR)/$(board)_$(tag)_dist)
 	$(if $(strip $(custom_plugin)),$(eval user_plugin=$(cur_dir)/$(custom_plugin)))
-	$(eval TCL_ARGS=$(foreach arg, $(TCL_ARGS_LIST), $(if $(strip $($(arg))), -$(arg) $($(arg))))) 
+	$(eval TCL_ARGS=$(foreach arg, $(TCL_ARGS_LIST), $(if $(strip $($(arg))), -$(arg) $($(arg)))))
 	$(info TCL_ARGS=$(TCL_ARGS))
+
+	# Add Fast Compile mode to speed up synthesis
+	$(eval TCL_ARGS += -compile_mode FastCompile)
+
 	#build
-	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir) 
+	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir)
 	cd open-nic-shell/script && vivado -mode batch -source build.tcl -tclargs $(TCL_ARGS) | tee $(cur_dir)/build_$(tag).log
 
 CHECK_VIVADO_VER:
@@ -68,9 +80,9 @@ else
 	@echo "Please make sure your have source your VIVADO_ROOT/settings64.sh"
 	exit 1;
 endif
-		
 
-	
+
+
 clean:
 	rm -rf $(build_dir)
 	rm -rf $(DIST_DIR)
