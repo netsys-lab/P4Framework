@@ -3,5 +3,8 @@
         "./vitisnetp4-scion/scapy-scion-int",
         "./vitisnetp4-scion/behavioral-model/tools",
         "/opt/Xilinx/Vivado/2023.1/tps/lib/python3.8"
+    ],
+    "cSpell.words": [
+        "chksum"
     ]
 }
