@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-EXAMPLE_OBJ=forward calc advCalc vitisalveo
+EXAMPLE_OBJ=forward calc advCalc vitisalveo vitisalveo_checksum
 QSPI=false
 SHELL := /bin/bash
 VIVADO_TARGET_VER=2023.1
