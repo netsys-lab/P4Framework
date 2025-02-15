@@ -199,7 +199,7 @@ header scmp_h {
 // Standard SCION Path //
 /////////////////////////
 
-#define SC_MAX_HOPS_PER_SEG 8
+#define SC_MAX_HOP_FIELDS 63
 #define SC_HOP_FIELD_BITS 96
 //const int SC_PATH_META_BYTES  = 4;  // 1 * 4 byte
 //const int SC_INFO_FIELD_BYTES = 8;  // 2 * 4 byte
@@ -287,6 +287,8 @@ header sc_opts_h {
 struct tuser_t
 {
     bit<1>  is_scion;
+    // If is_scion is 1, hop_fields is the total number of hop fields in the packet.
+    bit<6> hop_fields;
     bit<16> payload_chksum;
 }
 
@@ -310,10 +312,6 @@ struct sc_path_t {
     sc_info_h      info2;
 }
 
-header hop_fields_h {
-    varbit<(SC_MAX_HOPS_PER_SEG*SC_HOP_FIELD_BITS)> hfs;
-}
-
 struct headers_t
 {
     ethernet_h ether;
@@ -333,9 +331,69 @@ struct headers_t
     sc_info_h      path_info0;
     sc_info_h      path_info1;
     sc_info_h      path_info2;
-    hop_fields_h   path_seg0;
-    hop_fields_h   path_seg1;
-    hop_fields_h   path_seg2;
+    sc_hop_blob_h  path_hf0;
+    sc_hop_blob_h  path_hf1;
+    sc_hop_blob_h  path_hf2;
+    sc_hop_blob_h  path_hf3;
+    sc_hop_blob_h  path_hf4;
+    sc_hop_blob_h  path_hf5;
+    sc_hop_blob_h  path_hf6;
+    sc_hop_blob_h  path_hf7;
+    sc_hop_blob_h  path_hf8;
+    sc_hop_blob_h  path_hf9;
+    sc_hop_blob_h  path_hf10;
+    sc_hop_blob_h  path_hf11;
+    sc_hop_blob_h  path_hf12;
+    sc_hop_blob_h  path_hf13;
+    sc_hop_blob_h  path_hf14;
+    sc_hop_blob_h  path_hf15;
+    sc_hop_blob_h  path_hf16;
+    sc_hop_blob_h  path_hf17;
+    sc_hop_blob_h  path_hf18;
+    sc_hop_blob_h  path_hf19;
+    sc_hop_blob_h  path_hf20;
+    sc_hop_blob_h  path_hf21;
+    sc_hop_blob_h  path_hf22;
+    sc_hop_blob_h  path_hf23;
+    sc_hop_blob_h  path_hf24;
+    sc_hop_blob_h  path_hf25;
+    sc_hop_blob_h  path_hf26;
+    sc_hop_blob_h  path_hf27;
+    sc_hop_blob_h  path_hf28;
+    sc_hop_blob_h  path_hf29;
+    sc_hop_blob_h  path_hf30;
+    sc_hop_blob_h  path_hf31;
+    sc_hop_blob_h  path_hf32;
+    sc_hop_blob_h  path_hf33;
+    sc_hop_blob_h  path_hf34;
+    sc_hop_blob_h  path_hf35;
+    sc_hop_blob_h  path_hf36;
+    sc_hop_blob_h  path_hf37;
+    sc_hop_blob_h  path_hf38;
+    sc_hop_blob_h  path_hf39;
+    sc_hop_blob_h  path_hf40;
+    sc_hop_blob_h  path_hf41;
+    sc_hop_blob_h  path_hf42;
+    sc_hop_blob_h  path_hf43;
+    sc_hop_blob_h  path_hf44;
+    sc_hop_blob_h  path_hf45;
+    sc_hop_blob_h  path_hf46;
+    sc_hop_blob_h  path_hf47;
+    sc_hop_blob_h  path_hf48;
+    sc_hop_blob_h  path_hf49;
+    sc_hop_blob_h  path_hf50;
+    sc_hop_blob_h  path_hf51;
+    sc_hop_blob_h  path_hf52;
+    sc_hop_blob_h  path_hf53;
+    sc_hop_blob_h  path_hf54;
+    sc_hop_blob_h  path_hf55;
+    sc_hop_blob_h  path_hf56;
+    sc_hop_blob_h  path_hf57;
+    sc_hop_blob_h  path_hf58;
+    sc_hop_blob_h  path_hf59;
+    sc_hop_blob_h  path_hf60;
+    sc_hop_blob_h  path_hf61;
+    sc_hop_blob_h  path_hf62;
     // SCION Extensions
     sc_ext_h  scion_hbh_ext;
     sc_opts_h scion_hbh_opts;
@@ -363,7 +421,6 @@ parser IngrTransParser(
     inout standard_metadata_t smeta)
 {
     state start {
-        // outer_chksum.add(meta.payload_chksum);
         transition select (meta.axis_tuser.is_scion) {
             // FIXME: For proper checksum offload we need the check packets we
             // don't translate as well.
@@ -463,7 +520,7 @@ parser IngrTransParser(
     state info_field0 {
         pkt.extract(hdr.path_info0);
         transition select (hdr.path_meta.seg1_len) {
-            0       : segment0;
+            0       : hop_fields;
             default : info_field1;
         }
     }
@@ -471,28 +528,162 @@ parser IngrTransParser(
     state info_field1 {
         pkt.extract(hdr.path_info1);
          transition select (hdr.path_meta.seg2_len) {
-            0       : segment0;
+            0       : hop_fields;
             default : info_field2;
         }
     }
 
     state info_field2 {
         pkt.extract(hdr.path_info2);
-        transition segment0;
+        transition hop_fields;
     }
 
-    state segment0 {
-        pkt.extract(hdr.path_seg0, ((bit<32>)(hdr.path_meta.seg0_len) * SC_HOP_FIELD_BITS));
-        transition segment1;
+    state hop_fields {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x20 &&& 0x20: hop_fields_discard_32;
+            default      : hop_fields_32;
+        }
     }
 
-    state segment1 {
-        pkt.extract(hdr.path_seg1, ((bit<32>)(hdr.path_meta.seg1_len) * SC_HOP_FIELD_BITS));
-        transition segment2;
+    state hop_fields_discard_32 {
+        pkt.extract(hdr.path_hf0);
+        pkt.extract(hdr.path_hf1);
+        pkt.extract(hdr.path_hf2);
+        pkt.extract(hdr.path_hf3);
+        pkt.extract(hdr.path_hf4);
+        pkt.extract(hdr.path_hf5);
+        pkt.extract(hdr.path_hf6);
+        pkt.extract(hdr.path_hf7);
+        pkt.extract(hdr.path_hf8);
+        pkt.extract(hdr.path_hf9);
+        pkt.extract(hdr.path_hf10);
+        pkt.extract(hdr.path_hf11);
+        pkt.extract(hdr.path_hf12);
+        pkt.extract(hdr.path_hf13);
+        pkt.extract(hdr.path_hf14);
+        pkt.extract(hdr.path_hf15);
+        pkt.extract(hdr.path_hf16);
+        pkt.extract(hdr.path_hf17);
+        pkt.extract(hdr.path_hf18);
+        pkt.extract(hdr.path_hf19);
+        pkt.extract(hdr.path_hf20);
+        pkt.extract(hdr.path_hf21);
+        pkt.extract(hdr.path_hf22);
+        pkt.extract(hdr.path_hf23);
+        pkt.extract(hdr.path_hf24);
+        pkt.extract(hdr.path_hf25);
+        pkt.extract(hdr.path_hf26);
+        pkt.extract(hdr.path_hf27);
+        pkt.extract(hdr.path_hf28);
+        pkt.extract(hdr.path_hf29);
+        pkt.extract(hdr.path_hf30);
+        pkt.extract(hdr.path_hf31);
+
+        transition select (meta.axis_tuser.hop_fields) {
+            0x10 &&& 0x10: hop_fields_discard_16;
+            default      : hop_fields_16;
+        }
     }
 
-    state segment2 {
-        pkt.extract(hdr.path_seg2, ((bit<32>)(hdr.path_meta.seg2_len) * SC_HOP_FIELD_BITS));
+    state hop_fields_32 {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x10 &&& 0x10: hop_fields_discard_16;
+            default      : hop_fields_16;
+        }
+    }
+
+    state hop_fields_discard_16 {
+        pkt.extract(hdr.path_hf32);
+        pkt.extract(hdr.path_hf33);
+        pkt.extract(hdr.path_hf34);
+        pkt.extract(hdr.path_hf35);
+        pkt.extract(hdr.path_hf36);
+        pkt.extract(hdr.path_hf37);
+        pkt.extract(hdr.path_hf38);
+        pkt.extract(hdr.path_hf39);
+        pkt.extract(hdr.path_hf40);
+        pkt.extract(hdr.path_hf41);
+        pkt.extract(hdr.path_hf42);
+        pkt.extract(hdr.path_hf43);
+        pkt.extract(hdr.path_hf44);
+        pkt.extract(hdr.path_hf45);
+        pkt.extract(hdr.path_hf46);
+        pkt.extract(hdr.path_hf47);
+
+        transition select (meta.axis_tuser.hop_fields) {
+            0x08 &&& 0x08: hop_fields_discard_8;
+            default      : hop_fields_8;
+        }
+    }
+
+    state hop_fields_16 {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x08 &&& 0x08: hop_fields_discard_8;
+            default      : hop_fields_8;
+        }
+    }
+
+    state hop_fields_discard_8 {
+        pkt.extract(hdr.path_hf48);
+        pkt.extract(hdr.path_hf49);
+        pkt.extract(hdr.path_hf50);
+        pkt.extract(hdr.path_hf51);
+        pkt.extract(hdr.path_hf52);
+        pkt.extract(hdr.path_hf53);
+        pkt.extract(hdr.path_hf54);
+        pkt.extract(hdr.path_hf55);
+
+        transition select (meta.axis_tuser.hop_fields) {
+            0x04 &&& 0x04: hop_fields_discard_4;
+            default      : hop_fields_4;
+        }
+    }
+
+    state hop_fields_8 {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x04 &&& 0x04: hop_fields_discard_4;
+            default      : hop_fields_4;
+        }
+    }
+
+    state hop_fields_discard_4 {
+        pkt.extract(hdr.path_hf56);
+        pkt.extract(hdr.path_hf57);
+        pkt.extract(hdr.path_hf58);
+        pkt.extract(hdr.path_hf59);
+
+        transition select (meta.axis_tuser.hop_fields) {
+            0x02 &&& 0x02: hop_fields_discard_2;
+            default      : hop_fields_2;
+        }
+    }
+
+    state hop_fields_4 {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x02 &&& 0x02: hop_fields_discard_2;
+            default      : hop_fields_2;
+        }
+    }
+
+    state hop_fields_discard_2 {
+        pkt.extract(hdr.path_hf60);
+        pkt.extract(hdr.path_hf61);
+
+        transition select (meta.axis_tuser.hop_fields) {
+            0x01 &&& 0x01: hop_fields_discard_1;
+            default      : scion_extensions;
+        }
+    }
+
+    state hop_fields_2 {
+        transition select (meta.axis_tuser.hop_fields) {
+            0x01 &&& 0x01: hop_fields_discard_1;
+            default      : scion_extensions;
+        }
+    }
+
+    state hop_fields_discard_1 {
+        pkt.extract(hdr.path_hf62);
         transition scion_extensions;
     }
 
@@ -696,9 +887,6 @@ control IngrTransProcessing(
                     8w0,
                     hdr.ipv4.protocol,
                     hdr.outer_udp.length,
-                    hdr.outer_udp.src,
-                    hdr.outer_udp.dst,
-                    hdr.outer_udp.length,
                     meta.axis_tuser.payload_chksum
                 }, expected_chksum);
             } else {
@@ -708,9 +896,6 @@ control IngrTransProcessing(
                     hdr.outer_udp.length,
                     8w0,
                     hdr.ipv6.next_hdr, // FIXME: revisit when we allow IPv6 extension headers
-                    hdr.outer_udp.src,
-                    hdr.outer_udp.dst,
-                    hdr.outer_udp.length,
                     meta.axis_tuser.payload_chksum
                 }, expected_chksum);
             }
@@ -790,6 +975,7 @@ control IngrTransProcessing(
         }
         // Clear output metadata that is no longer useful
         meta.axis_tuser.is_scion = 0;
+        meta.axis_tuser.hop_fields = 0;
         meta.axis_tuser.payload_chksum = 0;
     }
 }
