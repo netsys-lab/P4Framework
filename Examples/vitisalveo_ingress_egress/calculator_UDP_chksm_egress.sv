@@ -3,9 +3,9 @@
 // Company:
 // Engineer:
 //
-// Create Date: 02/06/2025 07:13:28 PM
+// Create Date: 03/06/2025 09:52:01 PM
 // Design Name:
-// Module Name: UDP_checksum
+// Module Name: ingress_checksum_calculator
 // Project Name:
 // Target Devices:
 // Tool Versions:
@@ -19,270 +19,287 @@
 //
 //////////////////////////////////////////////////////////////////////////////////
 
-module calculator_UDP_chksm_egress (
-    input  logic        clk,                // Clock signal
-    input  logic        rst,                // Active-low reset
+module calculator_UDP_chksm_egress #(
+    parameter int Max_frag_count = 25  // Default value for Max_frag_count
+) (
+    input  logic        clk,                  // Clock signal
+    input  logic        rst,                  // Active-low reset
 
-    // AXI Stream Input
+    // Input
     input  logic [511:0] s_axis_tdata,
     input  logic [63:0]  s_axis_tkeep,
     input  logic         s_axis_tlast,
     output logic         s_axis_tready,
     input  logic         s_axis_tvalid,
-
-    // Metadata Input
     input  logic [10:0]   user_metadata_in,       // (bit 0: is_scion, [10:1] offset)
-    input  logic         user_metadata_in_valid,
+    input  logic          user_metadata_in_valid,
 
-    // Metadata Output
-    output logic [16:0]  user_metadata_out,      // (bit 0: is_scion [16:1] checksum)
-    output logic         user_metadata_out_valid,
-
-    // AXI Stream Output
+    //Output
     output logic [511:0] m_axis_tdata,
     output logic [63:0]  m_axis_tkeep,
     output logic         m_axis_tlast,
     input  logic         m_axis_tready,
-    output logic         m_axis_tvalid
+    output logic         m_axis_tvalid,
+    output logic [16:0]  user_metadata_out,      // (bit 0: is_scion [16:1] checksum)
+    output logic         user_metadata_out_valid
 );
 
     // Internal signals
-    logic [15:0] checksum;                  // Computed checksum
-    logic [31:0][15:0] words;               // 2D array to store 16-bit words
-    logic [31:0][15:0] sum_stage1;          // @D array for partial addition
-    logic [15:0] sum_stage2;                // Accumulated checksum
-    logic [15:0] payload_offset;            //to store the remaining bytes to skip
-    logic        processing;                // flag to indicate ongoing checksum calculation
-    logic [24:0][511:0] fragment_buffer;    // Buffer to store fragments
-    logic [5:0]   fragment_count;           // Number of fragments stored
-    logic [5:0]   fragment_count_initial;   // Initial fragment count
-    logic         metadata_latched;         // Flag to indicate metadata is latched
-    logic [10:0]   metadata_latched_in;      // Latched user_metadata_in
+    logic [15:0] checksum[4];                                           // Computed checksum for each buffer
+    logic [31:0][15:0] words;                                           // 2D array to store 16-bit words
+    logic [31:0][15:0] sum_stage1;                                      // 2D array for partial addition
+    logic [15:0] sum_stage2;                                            // Accumulated checksum
+    logic [15:0] payload_offset;                                        // To store the remaining bytes to skip
+    logic        processing[4];                                         // Flag to indicate ongoing checksum calculation for each buffer
+    logic [Max_frag_count:0][511:0] fragment_buffer[4];                 // Quad buffer to store fragments of consecutive packets
+    logic [5:0]   fragment_count[4];                                    // Number of fragments stored in each buffer
+    logic [5:0]   fragment_count_initial[4];                            // Initial fragment count for each buffer
+    logic         metadata_latched[4];                                  // Flag to indicate metadata is latched for each buffer
+    logic [10:0]  metadata_latched_in[4];                               // Latched user_metadata_in for each buffer
+    logic [1:0]   buffer_select;                                        // Signal to select current buffer to process incoming data
+    logic         ready_to_transmit[4];                                 // Flag to indicate checksum calculation is done and the buffer is ready to transmit
+    logic         transmit_active;                                      // Flag to indicate data transmission is active
+    logic [1:0]   transmit_queue[4];                                    // Queue to store buffer indices of ready to transmit data
+    logic [1:0]   transmit_queue_head;                                  // points to the buffer that currently being transmitted
+    logic [1:0]   transmit_queue_tail;                                  // points to the next buffer in transmit queue
+
+    logic [1:0]   current_buffer_index;                                 // Index of the buffer currently being transmitted
+    logic [5:0]   current_fragment_count;                               // Current fragment count for the buffer being transmitted
+    logic [5:0]   current_fragment_count_initial;                       // Initial fragment count for the buffer being transmitted
+
 
     // FSM States
-    typedef enum logic [3:0] {
-        IDLE    = 4'b0001,
-        PROCESS = 4'b0010,
-        DELAY   = 4'B0100,
-        DATAOUT = 4'b1000
+    typedef enum logic [2:0] {
+        IDLE    = 3'b001,
+        PROCESS = 3'b010,
+        DATAOUT = 3'b100
     } checksum_FSM;
 
-    checksum_FSM current_state, next_state;
+    checksum_FSM current_state[4], next_state[4];   //4 different FSMs to manage 4 different packets
 
-    // State transition logic
+    // State transition logic for each buffer
     always_ff @(posedge clk ) begin
         if (!rst) begin
-            current_state <= IDLE;
+            for (int i = 0; i < 4; i++) begin
+                current_state[i] <= IDLE;
+            end
         end else begin
-            current_state <= next_state;
+            for (int i = 0; i < 4; i++) begin
+                current_state[i] <= next_state[i];
+            end
         end
     end
 
-    // Next state logic
+    // Next state logic for each buffer
     always_comb begin
-        next_state = current_state;
-        case (current_state)
-            IDLE: begin
-                if (s_axis_tvalid  && user_metadata_in_valid) begin
-                    next_state = PROCESS;
-                 end else begin
-                    next_state = IDLE;
+        for (int i = 0; i < 4; i++) begin
+            next_state[i] = current_state[i];
+            case (current_state[i])
+                IDLE: begin
+                    if (s_axis_tvalid && user_metadata_in_valid && buffer_select == i) begin
+                        next_state[i] = PROCESS;
+                    end else begin
+                        next_state[i] = IDLE;
+                    end
                 end
-            end
-            PROCESS: begin
-                if (s_axis_tlast ) begin
-                    next_state = DELAY ;
-                end else begin
-                    next_state = PROCESS ;
+                PROCESS: begin
+                    if (s_axis_tlast && buffer_select == i) begin
+                        next_state[i] = DATAOUT;
+                    end else begin
+                        next_state[i] = PROCESS;
+                    end
                 end
-            end
-            DELAY: begin
-                next_state = DATAOUT;
-            end
-            DATAOUT: begin
-                if (fragment_count == 0) begin
-                    next_state = IDLE;
-                end else begin
-                    next_state = DATAOUT;
+                DATAOUT: begin
+                    if (fragment_count[i] == 0) begin
+                        next_state[i] = IDLE;
+                    end else begin
+                        next_state[i] = DATAOUT;
+                    end
                 end
-            end
-        endcase
+            endcase
+        end
     end
 
-       // Output logic
+    // Output logic for each buffer
     always_ff @(posedge clk ) begin
         if (!rst) begin
             s_axis_tready <= 1'b1;
             m_axis_tvalid <= 1'b0;
             user_metadata_out <= 17'b0;
             user_metadata_out_valid <= 1'b0;
-            checksum <= 16'h0000;
+            checksum <= '{default: 16'h0000};
             payload_offset <= 16'b0;
-            processing <= 1'b0;
+            processing <= '{default: 1'b0};
             words <= '{default: 16'b0};
             sum_stage1 <= '{default: 16'b0};
             sum_stage2 <= 16'b0;
-            fragment_count <= 6'b0;
-            fragment_count_initial <= 6'b0;
+            fragment_count <= '{default: 6'b0};
+            fragment_count_initial <= '{default: 6'b0};
             fragment_buffer <= '{default: 512'b0};
-            metadata_latched <= 1'b0;
-            metadata_latched_in <= 17'b0;
+            metadata_latched <= '{default: 1'b0};
+            metadata_latched_in <= '{default: 17'b0};
+            buffer_select <= 2'b00;
+            ready_to_transmit <= '{default: 1'b0};
+            transmit_active <= 1'b0;
+            transmit_queue <= '{default: 2'b00};
+            transmit_queue_head <= 2'b00;
+            transmit_queue_tail <= 2'b00;
+            m_axis_tlast <= 1'b0;
+            current_buffer_index <= 2'b0;
+            current_fragment_count <= 6'b0;
+            current_fragment_count_initial <= 6'b0;
+            m_axis_tkeep <= 64'b0;
+            m_axis_tdata <= 512'b0;
         end else begin
-            case (current_state)
+            for (int i = 0; i < 4; i++) begin
+                case (current_state[i])
+                    IDLE: begin
+                        if (s_axis_tvalid && user_metadata_in_valid && buffer_select == i) begin
+                            metadata_latched[i] <= 1'b1;                        //set metadata latched flag
+                            metadata_latched_in[i] <= user_metadata_in;         //stores metadata input
+                            payload_offset <= user_metadata_in[10:1] / 2;       //stores number of 16 bit words to skip
+                            processing[i] <= 1'b1;                              //set checksum calculation processing flag
 
-                IDLE: begin
-                    s_axis_tready <= 1'b1;
-                    m_axis_tvalid <= 1'b0;
-                    user_metadata_out <= 17'b0;
-                    user_metadata_out_valid <= 1'b0;
-                    checksum <= 16'h0000;
-                    payload_offset <= 16'b0;
-                    processing <= 1'b0;
-                    words <= '{default: 16'b0};
-                    sum_stage1 <= '{default: 16'b0};
-                    sum_stage2 <= 16'b0;
-                    fragment_count <= 6'b0;
-                    fragment_count_initial <= 6'b0;
-                    fragment_buffer <= '{default: 512'b0};
-                    metadata_latched <= 1'b0;
-                    metadata_latched_in <= 17'b0;
+                            //checksum calculation of first fragment
+                            fragment_buffer[i][0] <= s_axis_tdata;
+                            fragment_count[i] <= fragment_count[i] + 1;
+                            fragment_count_initial[i] <= fragment_count_initial[i] + 1;
 
-                    if (s_axis_tvalid && user_metadata_in_valid) begin
-                        metadata_latched <= 1'b1;
-                        metadata_latched_in <= user_metadata_in;
-                        payload_offset <= user_metadata_in[10:1] / 2;
-                        processing <= 1'b1;
+                            for (int j = 0; j < 32; j++) begin
+                                words[j] = s_axis_tdata[j * 16 +: 16];
+                            end
 
-                        fragment_buffer[0] <= s_axis_tdata;         // Stores the first fragment
-                        fragment_count <= fragment_count + 1;
-
-                        for (int i = 0; i < 32; i++) begin          // Calculate checksum for the first fragment
-                            words[i] = s_axis_tdata[i * 16 +: 16];
-                        end
-
-                        for (int i = 0; i < 32; i++) begin
-                            if (i < payload_offset) begin
-                                sum_stage1[i] = 16'h0000;
-                                if (payload_offset > 32) begin
-                                    payload_offset <= payload_offset - 32;
+                            for (int j = 0; j < 32; j++) begin
+                                if (j < payload_offset) begin
+                                    sum_stage1[j] = 16'h0000;
+                                    if (payload_offset > 32) begin
+                                        payload_offset <= payload_offset - 32;
+                                    end else begin
+                                        payload_offset <= 16'b0;
+                                    end
+                                end else if (s_axis_tkeep[j * 2] && s_axis_tkeep[j * 2 + 1]) begin
+                                    sum_stage1[j] = words[j];
+                                end else if (s_axis_tkeep[j * 2] && !s_axis_tkeep[j * 2 + 1]) begin
+                                    sum_stage1[j] = {8'b0, words[j][7:0]};
                                 end else begin
-                                    payload_offset <= 16'b0;
+                                    sum_stage1[j] = 16'h0000;
                                 end
-                            end else if (s_axis_tkeep[i * 2] && s_axis_tkeep[i * 2 + 1]) begin
-                                sum_stage1[i] = words[i];
-                            end else if (s_axis_tkeep[i * 2] && !s_axis_tkeep[i * 2 + 1]) begin
-                                sum_stage1[i] = {8'b0, words[i][7:0]};
-                            end else begin
-                                sum_stage1[i] = 16'h0000;
+                            end
+
+                            sum_stage2 = sum_stage1[0] + sum_stage1[1] + sum_stage1[2] + sum_stage1[3] +
+                                         sum_stage1[4] + sum_stage1[5] + sum_stage1[6] + sum_stage1[7] +
+                                         sum_stage1[8] + sum_stage1[9] + sum_stage1[10] + sum_stage1[11] +
+                                         sum_stage1[12] + sum_stage1[13] + sum_stage1[14] + sum_stage1[15] +
+                                         sum_stage1[16] + sum_stage1[17] + sum_stage1[18] + sum_stage1[19] +
+                                         sum_stage1[20] + sum_stage1[21] + sum_stage1[22] + sum_stage1[23] +
+                                         sum_stage1[24] + sum_stage1[25] + sum_stage1[26] + sum_stage1[27] +
+                                         sum_stage1[28] + sum_stage1[29] + sum_stage1[30] + sum_stage1[31];
+                            checksum[i] <= checksum[i] + sum_stage2;
+                        end
+                    end
+
+                    PROCESS: begin
+                        if (s_axis_tvalid && processing[i] && buffer_select == i) begin
+                            //checksum calculation of current fragment
+                            fragment_buffer[i][fragment_count[i]] <= s_axis_tdata;
+                            fragment_count[i] <= fragment_count[i] + 1;
+                            fragment_count_initial[i] <= fragment_count_initial[i] + 1;
+
+                            for (int j = 0; j < 32; j++) begin
+                                words[j] = s_axis_tdata[j * 16 +: 16];
+                            end
+
+                            for (int j = 0; j < 32; j++) begin
+                                if (j < payload_offset) begin
+                                    sum_stage1[j] = 16'h0000;
+                                    if (payload_offset > 32) begin
+                                        payload_offset <= payload_offset - 32;
+                                    end else begin
+                                        payload_offset <= 16'b0;
+                                    end
+                                end else if (s_axis_tkeep[j * 2] && s_axis_tkeep[j * 2 + 1]) begin
+                                    sum_stage1[j] = words[j];
+                                end else if (s_axis_tkeep[j * 2] && !s_axis_tkeep[j * 2 + 1]) begin
+                                    sum_stage1[j] = {8'b0, words[j][7:0]};
+                                end else begin
+                                    sum_stage1[j] = 16'h0000;
+                                end
+                            end
+
+                            sum_stage2 = sum_stage1[0] + sum_stage1[1] + sum_stage1[2] + sum_stage1[3] +
+                                         sum_stage1[4] + sum_stage1[5] + sum_stage1[6] + sum_stage1[7] +
+                                         sum_stage1[8] + sum_stage1[9] + sum_stage1[10] + sum_stage1[11] +
+                                         sum_stage1[12] + sum_stage1[13] + sum_stage1[14] + sum_stage1[15] +
+                                         sum_stage1[16] + sum_stage1[17] + sum_stage1[18] + sum_stage1[19] +
+                                         sum_stage1[20] + sum_stage1[21] + sum_stage1[22] + sum_stage1[23] +
+                                         sum_stage1[24] + sum_stage1[25] + sum_stage1[26] + sum_stage1[27] +
+                                         sum_stage1[28] + sum_stage1[29] + sum_stage1[30] + sum_stage1[31];
+
+                            checksum[i] <= checksum[i] + sum_stage2;                //cumulative checksum of current packet
+
+                            if (s_axis_tlast) begin
+                                checksum[i] <= ~checksum[i];
+                                ready_to_transmit[i] <= 1'b1;                       //sets transmission ready flag after checksum calculation for current packet
+                                transmit_queue[transmit_queue_tail] <= i;           //add current buffer index to transmission queue
+                                transmit_queue_tail <= transmit_queue_tail + 1;     //increment transmission queue tail
+                                buffer_select <= buffer_select + 1;                 //incerments current buffer
                             end
                         end
-
-                        sum_stage2 = sum_stage1[0] + sum_stage1[1] + sum_stage1[2] + sum_stage1[3] +
-                                     sum_stage1[4] + sum_stage1[5] + sum_stage1[6] + sum_stage1[7] +
-                                     sum_stage1[8] + sum_stage1[9] + sum_stage1[10] + sum_stage1[11] +
-                                     sum_stage1[12] + sum_stage1[13] + sum_stage1[14] + sum_stage1[15] +
-                                     sum_stage1[16] + sum_stage1[17] + sum_stage1[18] + sum_stage1[19] +
-                                     sum_stage1[20] + sum_stage1[21] + sum_stage1[22] + sum_stage1[23] +
-                                     sum_stage1[24] + sum_stage1[25] + sum_stage1[26] + sum_stage1[27] +
-                                     sum_stage1[28] + sum_stage1[29] + sum_stage1[30] + sum_stage1[31];
-                         checksum <= checksum + sum_stage2;    //checksum of first fragment
-
-                     end else begin
-                        s_axis_tready <= 1'b1;
-                        m_axis_tvalid <= 1'b0;
-                        user_metadata_out <= 17'b0;
-                        user_metadata_out_valid <= 1'b0;
-                        checksum <= 16'h0000;
-                        payload_offset <= 16'b0;
-                        processing <= 1'b0;
-                        words <= '{default: 16'b0};
-                        sum_stage1 <= '{default: 16'b0};
-                        sum_stage2 <= 16'b0;
-                        fragment_count <= 6'b0;
-                        metadata_latched <= 1'b0;
-                        metadata_latched_in <= 17'b0;
                     end
-                end
 
-        PROCESS: begin
-            if (s_axis_tvalid && processing) begin
-                // Store the fragment
-                fragment_buffer[fragment_count] <= s_axis_tdata;
-                fragment_count <= fragment_count + 1;
+                    DATAOUT: begin
+                        if (m_axis_tready) begin
+                            //transmission of fragments in current buffer in the transmission queue
+                            current_buffer_index = transmit_queue[transmit_queue_head];
+                            current_fragment_count = fragment_count[current_buffer_index];
+                            current_fragment_count_initial = fragment_count_initial[current_buffer_index];
 
-                // Calculate checksum for the current fragment
-                for (int i = 0; i < 32; i++) begin
-                    words[i] = s_axis_tdata[i * 16 +: 16];
-                end
+                            if (current_fragment_count > 0) begin
+                                processing[current_buffer_index] <= 1'b0;
 
-                for (int i = 0; i < 32; i++) begin
-                    if (i < payload_offset) begin
-                        sum_stage1[i] = 16'h0000;
-                        if (payload_offset > 32) begin
-                            payload_offset <= payload_offset - 32;
-                        end else begin
-                            payload_offset <= 16'b0;
-                        end
-                    end else if (s_axis_tkeep[i * 2] && s_axis_tkeep[i * 2 + 1]) begin
-                        sum_stage1[i] = words[i];
-                    end else if (s_axis_tkeep[i * 2] && !s_axis_tkeep[i * 2 + 1]) begin
-                        sum_stage1[i] = {8'b0, words[i][7:0]};
-                    end else begin
-                        sum_stage1[i] = 16'h0000;
-                    end
-                end
+                                m_axis_tvalid <= 1'b1;
+                                m_axis_tdata <= fragment_buffer[current_buffer_index][current_fragment_count_initial - current_fragment_count];
+                                m_axis_tkeep <= 64'hFFFFFFFFFFFFFFFF;
+                                m_axis_tlast <= (current_fragment_count == 1);
 
-                sum_stage2 = sum_stage1[0] + sum_stage1[1] + sum_stage1[2] + sum_stage1[3] +
-                             sum_stage1[4] + sum_stage1[5] + sum_stage1[6] + sum_stage1[7] +
-                             sum_stage1[8] + sum_stage1[9] + sum_stage1[10] + sum_stage1[11] +
-                             sum_stage1[12] + sum_stage1[13] + sum_stage1[14] + sum_stage1[15] +
-                             sum_stage1[16] + sum_stage1[17] + sum_stage1[18] + sum_stage1[19] +
-                             sum_stage1[20] + sum_stage1[21] + sum_stage1[22] + sum_stage1[23] +
-                             sum_stage1[24] + sum_stage1[25] + sum_stage1[26] + sum_stage1[27] +
-                             sum_stage1[28] + sum_stage1[29] + sum_stage1[30] + sum_stage1[31];
-                checksum <= checksum + sum_stage2;
-
-                // Handle the last fragment
-                if (s_axis_tlast) begin
-                    checksum <= ~checksum; // Finalize checksum
-                    //processing <= 1'b0; // Stop processing
-                end
-            end
-        end
-
-       DELAY: begin
-            fragment_count_initial <= fragment_count ; // Store the total number of fragments
-                end
-
-        DATAOUT: begin
-                    if (m_axis_tready) begin
-                        if (fragment_count > 0) begin
-                            processing <= 1'b0;
-                            // Output the current fragment
-                            m_axis_tvalid <= 1'b1;
-                            m_axis_tdata <= fragment_buffer[fragment_count_initial - fragment_count];
-                            m_axis_tkeep <= 64'hFFFFFFFFFFFFFFFF;
-                            m_axis_tlast <= (fragment_count == 1);
-
-
-                                if (fragment_count == fragment_count_initial) begin         // Output metadata only with the first fragment
-                                     user_metadata_out <= {checksum, metadata_latched_in[0]};  // bit 0: is_scion, Bbit [6:1] hopfield, [23:7] checksum
-                                     user_metadata_out_valid <= 1'b1;                            // Assert metadata valid for the first fragment
+                                if (current_fragment_count == current_fragment_count_initial) begin
+                                    user_metadata_out <= {checksum[current_buffer_index], metadata_latched_in[current_buffer_index][0:0]};
+                                    user_metadata_out_valid <= 1'b1;
                                 end else begin
-                                     user_metadata_out <= 17'b0;
-                                     user_metadata_out_valid <= 1'b0;
+                                    user_metadata_out <= 17'b0;
+                                    user_metadata_out_valid <= 1'b0;
                                 end
 
-                            fragment_count <= fragment_count - 1;
-                        end else begin
-                            m_axis_tvalid <= 1'b0;
-                            user_metadata_out <= 17'b0;
-                            user_metadata_out_valid <= 1'b0;
+                                fragment_count[current_buffer_index] <= current_fragment_count - 1;
+                            end else begin
+                                m_axis_tvalid <= 1'b0;
+                                user_metadata_out <= 17'b0;
+                                user_metadata_out_valid <= 1'b0;
+                                transmit_queue_head <= transmit_queue_head + 1;
+                                m_axis_tdata <= 512'b0;
+
+                                // Clear signals for current buffer after transmission
+                                fragment_count[current_buffer_index] <= 6'b0;
+                                fragment_count_initial[current_buffer_index] <= 6'b0;
+                                metadata_latched[current_buffer_index] <= 1'b0;
+                                metadata_latched_in[current_buffer_index] <= 17'b0;
+                                ready_to_transmit[current_buffer_index] <= 1'b0;
+
+                                // Clear transmission  queue signals after transmission
+                                if (transmit_queue_head == transmit_queue_tail) begin
+                                    transmit_queue <= '{default: 2'b00};
+                                    transmit_queue_head <= 2'b00;
+                                    transmit_queue_tail <= 2'b00;
+                                    buffer_select <= 2'b00;
+                                end
+                            end
                         end
                     end
-                 end
-            endcase
+                endcase
+            end
         end
     end
 
 endmodule
+
+

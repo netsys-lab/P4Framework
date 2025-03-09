@@ -515,7 +515,9 @@ module p2p_250mhz #(
 
 //generate UDP checksum calculator IPs
 
- calculator_UDP_chksm_egress chksm_calc_egress_inst(       //UDP checksum calculator instance at egress
+ calculator_UDP_chksm_egress#(         
+        .Max_frag_count(25)
+    ) chksm_calc_egress_inst (       //UDP checksum calculator instance at egress
 
         .s_axis_tdata        (axis_switch_1_tdata ),              //tdata input from ingress classifier
         .s_axis_tkeep        (axis_switch_1_tkeep ),              //tkeep input from ingress classifier
@@ -539,8 +541,9 @@ module p2p_250mhz #(
 
 
 
-    ingress_checksum_calculator ingress_checksum_calc_inst (        //UDP checksum calculator instance at ingress
-
+    ingress_checksum_calculator  #(         
+        .Max_frag_count(25)
+    ) ingress_checksum_calc_inst (            //UDP checksum calculator instance at ingress
         .clk(axis_aclk),
         .rst(axis_aresetn),
 
