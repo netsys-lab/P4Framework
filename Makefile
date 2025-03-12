@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-EXAMPLE_OBJ=forward calc advCalc vitisalveo vitisalveo_checksum
+EXAMPLE_OBJ=forward calc advCalc vitisalveo vitisalveo_checksum vitisalveo_ingress_egress
 QSPI=false
 SHELL := /bin/bash
 VIVADO_TARGET_VER=2023.1
@@ -15,7 +15,7 @@ if_synth=1
 board=au55c
 build_timestamp=$(shell date +%y%m%d%H%M)
 num_cmac_port=1
-num_phys_func=2
+num_phys_func=4
 
 # user_build_dir must be full path. Use build_dir to give the relative path
 build_dir=build
