@@ -39,10 +39,11 @@ module axi_stream_arbiter (
 );
 
     // FSM States
-    typedef enum logic [2:0] {
-        IDLE        = 3'b001,
-        SEND_SLAVE1 = 3'b010,
-        SEND_SLAVE2 = 3'b100
+    typedef enum logic [4:0] {
+        IDLE        = 4'b0001,
+        SEND_SLAVE1 = 4'b0010,
+        SEND_SLAVE2 = 4'b0100,
+        WAIT_LAST   = 4'b1000
     } state_t;
 
     state_t current_state, next_state;
@@ -67,31 +68,43 @@ module axi_stream_arbiter (
     always_comb begin
         next_state = current_state;
         case (current_state)
+
             IDLE: begin
-                if (s_axis_tvalid[0:0]) begin
+                if (s_axis_tvalid[0:0] && s_axis_tready[0:0] && m_axis_tready) begin
                     next_state = SEND_SLAVE1;
-                end else if (s_axis_tvalid[1:1]) begin
+                end else if (s_axis_tvalid[1:1] && s_axis_tready[1:1] && m_axis_tready) begin
                     next_state = SEND_SLAVE2;
+                end else begin
+                    next_state = IDLE;
                 end
             end
+
             SEND_SLAVE1: begin
                 if (s_axis_tlast[0:0] && m_axis_tready) begin
-                    if (s_axis_tvalid[1:1]) begin
-                        next_state = SEND_SLAVE2;
-                    end else begin
-                        next_state = IDLE;
-                    end
-                end
-            end
+                        next_state = WAIT_LAST;
+                end else begin
+                        next_state = SEND_SLAVE1;
+                 end
+               end
+
             SEND_SLAVE2: begin
                 if (s_axis_tlast[1:1] && m_axis_tready) begin
-                    if (s_axis_tvalid[0:0]) begin
-                        next_state = SEND_SLAVE1;
+                        next_state = WAIT_LAST;
                     end else begin
-                        next_state = IDLE;
+                        next_state = SEND_SLAVE2;
                     end
                 end
-            end
+
+           WAIT_LAST: begin
+               if (s_axis_tvalid[0:0] ) begin
+                   next_state = SEND_SLAVE1;
+               end else if (s_axis_tvalid[1:1]) begin
+                   next_state = SEND_SLAVE2;
+               end else begin
+                   next_state = IDLE;
+               end
+           end
+
             default: begin
                 next_state = IDLE;
             end
@@ -104,12 +117,17 @@ module axi_stream_arbiter (
         m_axis_tkeep_reg = 64'b0;
         m_axis_tvalid_reg = 1'b0;
         m_axis_tlast_reg = 1'b0;
-        s_axis_tready_reg = 1'b0;
+        s_axis_tready_reg = 2'b0;
 
         case (current_state)
             IDLE: begin
-                // Do nothing, wait for valid data
-            end
+                m_axis_tdata_reg = 512'b0;
+                m_axis_tkeep_reg = 64'b0;
+                m_axis_tvalid_reg = 1'b0;
+                m_axis_tlast_reg = 1'b0;
+                s_axis_tready_reg = 2'b11;
+                end
+
             SEND_SLAVE1: begin
                 m_axis_tdata_reg       =  s_axis_tdata[511:0];
                 m_axis_tkeep_reg       =  s_axis_tkeep[63:0];
@@ -117,6 +135,29 @@ module axi_stream_arbiter (
                 m_axis_tlast_reg       =  s_axis_tlast[0:0];
                 s_axis_tready_reg[0:0] =  m_axis_tready;
             end
+
+            WAIT_LAST: begin
+                if (s_axis_tvalid[0:0]) begin
+                m_axis_tdata_reg       =  s_axis_tdata[511:0];
+                m_axis_tkeep_reg       =  s_axis_tkeep[63:0];
+                m_axis_tvalid_reg      =  s_axis_tvalid[0:0];
+                m_axis_tlast_reg       =  s_axis_tlast[0:0];
+                s_axis_tready_reg[0:0] =  m_axis_tready;
+               end else if (s_axis_tvalid[1:1]) begin
+                m_axis_tdata_reg       =  s_axis_tdata[1023:512];
+                m_axis_tkeep_reg       =  s_axis_tkeep[127:64];
+                m_axis_tvalid_reg      =  s_axis_tvalid[1:1];
+                m_axis_tlast_reg       =  s_axis_tlast[1:1];
+                s_axis_tready_reg[1:1] =  m_axis_tready;
+               end else begin
+                m_axis_tdata_reg = 512'b0;
+                m_axis_tkeep_reg = 64'b0;
+                m_axis_tvalid_reg = 1'b0;
+                m_axis_tlast_reg = 1'b0;
+                s_axis_tready_reg = 2'b11;
+               end
+           end
+
             SEND_SLAVE2: begin
                 m_axis_tdata_reg       =  s_axis_tdata[1023:512];
                 m_axis_tkeep_reg       =  s_axis_tkeep[127:64];
@@ -129,7 +170,7 @@ module axi_stream_arbiter (
                 m_axis_tkeep_reg  = 64'b0;
                 m_axis_tvalid_reg = 1'b0;
                 m_axis_tlast_reg  = 1'b0;
-                s_axis_tready_reg = 1'b0;
+                s_axis_tready_reg = 2'b0;
             end
         endcase
     end
@@ -140,6 +181,6 @@ module axi_stream_arbiter (
     assign m_axis_tvalid = m_axis_tvalid_reg;
     assign m_axis_tlast  = m_axis_tlast_reg;
     assign s_axis_tready = s_axis_tready_reg;
-   
+
 
 endmodule
