@@ -33,7 +33,7 @@ module ingress_checksum_calculator #(
     output logic         s_axis_tready,
     input  logic         s_axis_tvalid,
 
-    input  logic [16:0]   user_metadata_in,         // (bit 0: is_scion, [6:1] hop fields , [16:7] offset)
+    input  logic [32:0]   user_metadata_in,         // (bit[15:0] packet size, bit 16 : is_scion, [22:17] hop fields , [32:23] offset)
     input  logic          user_metadata_in_valid,
 
     //Output
@@ -57,7 +57,7 @@ module ingress_checksum_calculator #(
     logic [5:0]   fragment_count[4];                                    // Number of fragments stored in each buffer
     logic [5:0]   fragment_count_initial[4];                            // Initial fragment count for each buffer
     logic         metadata_latched[4];                                  // Flag to indicate metadata is latched for each buffer
-    logic [16:0]  metadata_latched_in[4];                               // Latched user_metadata_in for each buffer
+    logic [32:0]  metadata_latched_in[4];                               // Latched user_metadata_in for each buffer
     logic [1:0]   buffer_select;                                        // Signal to select current buffer to process incoming data
     logic         ready_to_transmit[4];                                 // Flag to indicate checksum calculation is done and the buffer is ready to transmit
     logic         transmit_active;                                      // Flag to indicate data transmission is active
@@ -139,7 +139,7 @@ module ingress_checksum_calculator #(
             fragment_count_initial <= '{default: 6'b0};
             fragment_buffer <= '{default: 512'b0};
             metadata_latched <= '{default: 1'b0};
-            metadata_latched_in <= '{default: 17'b0};
+            metadata_latched_in <= '{default: 33'b0};
             buffer_select <= 2'b00;
             ready_to_transmit <= '{default: 1'b0};
             transmit_active <= 1'b0;
@@ -159,7 +159,7 @@ module ingress_checksum_calculator #(
                         if (s_axis_tvalid && user_metadata_in_valid && buffer_select == i) begin
                             metadata_latched[i] <= 1'b1;                        //set metadata latched flag
                             metadata_latched_in[i] <= user_metadata_in;         //stores metadata input
-                            payload_offset <= user_metadata_in[16:7] / 2;       //stores number of 16 bit words too skip
+                            payload_offset <= user_metadata_in[32:23] / 2;       //stores number of 16 bit words too skip
                             processing[i] <= 1'b1;                              //set checksum calculation processing flag
 
                             //checksum calculation of first fragment
@@ -264,7 +264,7 @@ module ingress_checksum_calculator #(
                                 m_axis_tlast <= (current_fragment_count == 1);
 
                                 if (current_fragment_count == current_fragment_count_initial) begin
-                                    user_metadata_out <= {checksum[current_buffer_index], metadata_latched_in[current_buffer_index][6:0]};
+                                    user_metadata_out <= {checksum[current_buffer_index], metadata_latched_in[current_buffer_index][22:16]};
                                     user_metadata_out_valid <= 1'b1;
                                 end else begin
                                     user_metadata_out <= 23'b0;
@@ -283,7 +283,7 @@ module ingress_checksum_calculator #(
                                 fragment_count[current_buffer_index] <= 6'b0;
                                 fragment_count_initial[current_buffer_index] <= 6'b0;
                                 metadata_latched[current_buffer_index] <= 1'b0;
-                                metadata_latched_in[current_buffer_index] <= 17'b0;
+                                metadata_latched_in[current_buffer_index] <= 33'b0;
                                 ready_to_transmit[current_buffer_index] <= 1'b0;
 
                                 // Clear transmission  queue after transmission

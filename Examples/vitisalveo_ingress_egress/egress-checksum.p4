@@ -1,21 +1,8 @@
-#line 1 "p4/ingress_classifier.p4"
+#line 1 "p4/egress_checksum.p4"
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include <core.p4>
 #include <xsa.p4>
-
-#line 1 "p4/include/limits.p4"
-// SPDX-License-Identifier: AGPL-3.0-or-later
-
-#ifndef _SCITRA_LIMITS_GUARD
-#define _SCITRA_LIMITS_GUARD
-
-const bit<16> BUS_WIDTH = 64;
-const bit<16> MAX_FRAGMENTS = 24;
-const bit<16> MAX_PACKET_SIZE = MAX_FRAGMENTS * BUS_WIDTH;
-
-#endif // _SCITRA_LIMITS_GUARD
-#line 6 "p4/ingress_classifier.p4"
 
 #line 1 "p4/include/headers.p4"
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -275,51 +262,35 @@ header sc_opts_h {
 }
 
 #endif // _SCITRA_HEADERS_GUARD
-#line 7 "p4/ingress_classifier.p4"
+#line 6 "p4/egress_checksum.p4"
 
-
-typedef bit<10> payload_offset_t;
 
 struct metadata_t
 {
-    bit<16>          size;
-    bit<1>           is_scion;
-    bit<6>           hop_fields;
-    payload_offset_t payload_offset;
+    bit<16> payload_chksum;
 }
 
 struct headers_t
 {
     ethernet_h ether;
-    // Underlay
     ipv4_h     ipv4;
     ipv6_h     ipv6;
+    icmp6_h    icmp;
+    tcp_h      tcp;
     udp_h      udp;
-    // SCION
-    sc_common_h       scion_common;
-    sc_host_addr_4_h  scion_dst_host_4;
-    sc_host_addr_16_h scion_dst_host_16;
-    sc_host_addr_4_h  scion_src_host_4;
-    sc_host_addr_16_h scion_src_host_16;
-    sc_path_meta_h    path_meta;
 }
 
 ////////////
 // Parser //
 ////////////
 
-parser IngrClassParser(
+parser EgrChksumParser(
     packet_in                 pkt,
     out   headers_t           hdr,
     inout metadata_t          meta,
     inout standard_metadata_t smeta)
 {
     state start {
-        // Clear input metadata that we will never read
-        meta.is_scion = 0;
-        meta.hop_fields = 0;
-        meta.payload_offset = 0;
-
         pkt.extract(hdr.ether);
         transition select (hdr.ether.etype) {
             ETHER_TYPE_IPV4: ipv4;
@@ -333,8 +304,10 @@ parser IngrClassParser(
 
         // don't parse fragments or IPv4 options
         transition select (hdr.ipv4.frag_offset, hdr.ipv4.ihl, hdr.ipv4.protocol) {
-            (0, 5, IP_PROTO_UDP): udp;
-            default             : accept; // definitely not SCION
+            (0, 5, IP_PROTO_ICMP): icmp;
+            (0, 5, IP_PROTO_TCP ): tcp;
+            (0, 5, IP_PROTO_UDP ): udp;
+            default              : accept;
         }
     }
 
@@ -342,56 +315,25 @@ parser IngrClassParser(
         pkt.extract(hdr.ipv6);
 
         transition select (hdr.ipv6.next_hdr) {
-            IP_PROTO_UDP: udp;
-            default     : accept; // definitely not SCION
+            IP_PROTO_ICMPv6: icmp;
+            IP_PROTO_TCP   : tcp;
+            IP_PROTO_UDP   : udp;
+            default        : accept;
         }
+    }
+
+    state icmp {
+        pkt.extract(hdr.icmp);
+        transition accept;
+    }
+
+    state tcp {
+        pkt.extract(hdr.tcp);
+        transition accept;
     }
 
     state udp {
         pkt.extract(hdr.udp);
-        // Continue parsing as if the packet has a SCION payload
-        pkt.extract(hdr.scion_common);
-        transition select (hdr.scion_common.host_type_len) {
-            0x00 &&& 0xf0: dst_host_4;
-            0x30 &&& 0xf0: dst_host_16;
-        }
-    }
-
-    state dst_host_4 {
-        pkt.extract(hdr.scion_dst_host_4);
-        transition select (hdr.scion_common.host_type_len) {
-            0x00 &&& 0x0f: src_host_4;
-            0x03 &&& 0x0f: src_host_16;
-        }
-    }
-
-    state dst_host_16 {
-        pkt.extract(hdr.scion_dst_host_16);
-        transition select (hdr.scion_common.host_type_len) {
-            0x00 &&& 0x0f: src_host_4;
-            0x03 &&& 0x0f: src_host_16;
-        }
-    }
-
-    state src_host_4 {
-        pkt.extract(hdr.scion_src_host_4);
-        transition path;
-    }
-
-    state src_host_16 {
-        pkt.extract(hdr.scion_src_host_16);
-        transition path;
-    }
-
-    state path {
-        transition select (hdr.scion_common.path_type) {
-            PATH_TYPE_SCION: scion_path;
-            default        :  accept;
-        }
-    }
-
-    state scion_path {
-        pkt.extract(hdr.path_meta);
         transition accept;
     }
 }
@@ -400,184 +342,33 @@ parser IngrClassParser(
 // Processing //
 ////////////////
 
-const bit<3> CNT_DROPPED = 0;
-const bit<3> CNT_OTHER = 1;
-const bit<3> CNT_TOTAL_IPV4 = 2;
-const bit<3> CNT_TOTAL_IPV6 = 3;
-const bit<3> CNT_SCION_IPV4 = 4;
-const bit<3> CNT_SCION_IPV6 = 5;
-
-control IngrClassProcessing(
+control EgrChksumProcessing(
     inout headers_t           hdr,
     inout metadata_t          meta,
     inout standard_metadata_t smeta)
 {
     // === Externs ===
 
-    // Counters
-    Counter<bit<32>, bit<3>>(6, CounterType_t.PACKETS) cnt_packets;
-
-    // IPv4 header checksum verification
     Checksum<bit<16>>(HashAlgorithm_t.ONES_COMPLEMENT16) ipv4_chksum;
-    bit<16> expected_chksum;
+    InternetChecksum() l4_checksum;
 
-    /// == Global Actions ===
+    // === Global Actions ===
 
     action dropPacket() {
         smeta.drop = 1;
     }
 
-    // === Local IP Match Table (IPv4 Underlay) ===
-    // Match the packet's destination against local IP addresses used for SCION.
-
-    table tab_local_addr_ipv4 {
-        key = {
-            hdr.ipv4.dst : exact;
-        }
-        actions = {
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 8;
-    }
-
-    // === Local IP Match Table (IPv6 Underlay) ===
-    // Match the packet's destination against local IP addresses used for SCION.
-
-    table tab_local_addr_ipv6 {
-        key = {
-            hdr.ipv6.dst : exact;
-        }
-        actions = {
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 8;
-    }
-
-    // === Static Port Mapping Table (IPv4 Underlay) ====
-    // This table statically associates UDP ports with SCION.
-    // Example: All UDP traffic on port 31000 should be treated as SCION.
-
-    action static_ipv4_is_scion() {
-        meta.is_scion = 1;
-        cnt_packets.count(CNT_SCION_IPV4);
-    }
-
-    table tab_static_ports_ipv4 {
-        key = {
-            hdr.udp.dst : exact;
-        }
-        actions = {
-            static_ipv4_is_scion;
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 1024;
-    }
-
-    // === Static Port Mapping Table (IPv6 Underlay) ====
-    // This table statically associates UDP ports with SCION.
-    // Example: All UDP traffic on port 31000 should be treated as SCION.
-
-    action static_ipv6_is_scion() {
-        meta.is_scion = 1;
-        cnt_packets.count(CNT_SCION_IPV6);
-    }
-
-    table tab_static_ports_ipv6 {
-        key = {
-            hdr.udp.dst : exact;
-        }
-        actions = {
-            static_ipv6_is_scion;
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 1024;
-    }
-
-    // === Dynamic Port Mapping Table (IPv4 Underlay) ===
-    // This contains temporary ports on which we expect a response from another
-    // SCION host. Matches both the destination port (local port) and the source
-    // IP and port (remote host).
-
-    Counter<bit<1>, bit<13>>(8192, CounterType_t.PACKETS) cnt_dynamic_ipv4_hit;
-
-    action dynamic_ipv4_is_scion(bit<13> index) {
-        meta.is_scion = 1;
-        cnt_dynamic_ipv4_hit.count(index);
-        cnt_packets.count(CNT_SCION_IPV4);
-    }
-
-    table tab_dynamic_ports_ipv4 {
-        key = {
-            hdr.ipv4.src : exact;
-            hdr.udp.src  : exact;
-            hdr.udp.dst  : exact;
-        }
-        actions = {
-            dynamic_ipv4_is_scion;
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 8192;
-    }
-
-    // === Dynamic Port Mapping Table (IPv6 Underlay) ===
-    // This contains temporary ports on which we expect a response from another
-    // SCION host. Matches both the destination port (local port) and the source
-    // IP and port (remote host).
-
-    Counter<bit<1>, bit<13>>(8192, CounterType_t.PACKETS) cnt_dynamic_ipv6_hit;
-
-    action dynamic_ipv6_is_scion(bit<13> index) {
-        meta.is_scion = 1;
-        cnt_dynamic_ipv6_hit.count(index);
-        cnt_packets.count(CNT_SCION_IPV6);
-    }
-
-    table tab_dynamic_ports_ipv6 {
-        key = {
-            hdr.ipv6.src : exact;
-            hdr.udp.src  : exact;
-            hdr.udp.dst  : exact;
-        }
-        actions = {
-            dynamic_ipv6_is_scion;
-            NoAction;
-        }
-        const default_action = NoAction();
-        size = 8192;
-    }
-
-    // The next core in the packet pipeline will calculate the checksum of the
-    // packet starting from the calculated offset so we can verify the UDP
-    // checksum afterwards.
-    action setPayloadOffset(payload_offset_t offset) {
-        meta.payload_offset = offset;
-    }
-
     // === Main ===
     apply {
-        // Ignore parser errors (packet might be too short if it was not SCION).
-        // If it could be SCION, sum up the segment lengths for use in the
-        // ingress translator's parser.
-
-        // Drop packets that are too large for the checksum unit
-        if (meta.size > MAX_PACKET_SIZE) {
+        // Check parser errors
+        if (smeta.parser_error != error.NoError) {
             dropPacket();
-            return;
         }
 
-        // Calculate total number of hop fields for ingress translator parser
-        if (hdr.path_meta.isValid()) {
-            meta.hop_fields = hdr.path_meta.seg0_len
-                + hdr.path_meta.seg1_len + hdr.path_meta.seg2_len;
-        }
+        l4_checksum.add(meta.payload_chksum);
 
         if (hdr.ipv4.isValid()) {
-            cnt_packets.count(CNT_TOTAL_IPV4);
+            // Compute IPv4 header checksum
             ipv4_chksum.apply({
                 hdr.ipv4.version,
                 hdr.ipv4.ihl,
@@ -590,32 +381,44 @@ control IngrClassProcessing(
                 hdr.ipv4.protocol,
                 hdr.ipv4.src,
                 hdr.ipv4.dst
-            }, expected_chksum);
-            if (hdr.ipv4.chksum != expected_chksum) {
-                cnt_packets.count(CNT_DROPPED);
-                dropPacket();
-                return;
-            }
-            setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV4_HDR_MIN_SIZE_BYTES);
-            if (hdr.udp.isValid()) {
-                if (tab_local_addr_ipv4.apply().hit) {
-                    if (!tab_static_ports_ipv4.apply().hit) {
-                        tab_dynamic_ports_ipv4.apply();
-                    }
-                }
+            }, hdr.ipv4.chksum);
+            if (hdr.icmp.isValid()) {
+                l4_checksum.get(hdr.icmp.chksum);
+            } else if (hdr.tcp.isValid()) {
+                l4_checksum.add({
+                    hdr.ipv4.src,
+                    hdr.ipv4.dst,
+                    8w0,
+                    hdr.ipv4.protocol,
+                    hdr.ipv4.total_len - IPV4_HDR_MIN_SIZE_BYTES // TODO: revisit if we allow IPv4 options
+                });
+                l4_checksum.get(hdr.tcp.chksum);
+            } else if (hdr.udp.isValid()) {
+                l4_checksum.add({
+                    hdr.ipv4.src,
+                    hdr.ipv4.dst,
+                    8w0,
+                    hdr.ipv4.protocol,
+                    hdr.udp.length
+                });
+                l4_checksum.get(hdr.udp.chksum);
             }
         } else if (hdr.ipv6.isValid()) {
-            cnt_packets.count(CNT_TOTAL_IPV6);
-            setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV6_HDR_SIZE_BYTES);
-            if (hdr.udp.isValid()) {
-                if (tab_local_addr_ipv6.apply().hit) {
-                    if (!tab_static_ports_ipv6.apply().hit) {
-                    tab_dynamic_ports_ipv6.apply();
-                    }
-                }
+            // IPv6 pseudo-header
+            l4_checksum.add({
+                hdr.ipv6.src,
+                hdr.ipv6.dst,
+                hdr.ipv6.payload_len, // TODO: revisit if we allow IPv6 extension headers
+                8w0,
+                hdr.ipv6.next_hdr // TODO: revisit if we allow IPv6 extension headers
+            });
+            if (hdr.icmp.isValid()) {
+                l4_checksum.get(hdr.icmp.chksum);
+            } else if (hdr.tcp.isValid()) {
+                l4_checksum.get(hdr.tcp.chksum);
+            } else if (hdr.udp.isValid()) {
+                l4_checksum.get(hdr.udp.chksum);
             }
-        } else {
-            cnt_packets.count(CNT_OTHER);
         }
     }
 }
@@ -624,7 +427,7 @@ control IngrClassProcessing(
 // Deparser //
 //////////////
 
-control IngrClassDeparser(
+control EgrChksumDeparser(
     packet_out                pkt,
     in    headers_t           hdr,
     inout metadata_t          meta,
@@ -635,12 +438,12 @@ control IngrClassDeparser(
     }
 }
 
-//////////////
-// Pipeline //
-//////////////
+//////////
+// Main //
+//////////
 
 XilinxPipeline(
-    IngrClassParser(),
-    IngrClassProcessing(),
-    IngrClassDeparser()
+    EgrChksumParser(),
+    EgrChksumProcessing(),
+    EgrChksumDeparser()
 ) main;

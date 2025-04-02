@@ -17,7 +17,6 @@
 // *************************************************************************
 `include "open_nic_shell_macros.vh"
 `timescale 1ns/1ps
-(* dont_touch = "true" *)
 module p2p_250mhz #(
   parameter int NUM_INTF = 4
 ) (
@@ -82,7 +81,7 @@ module p2p_250mhz #(
   input  [511:0]       s_axis_qdma_h2c_tdata,
   input   [63:0]       s_axis_qdma_h2c_tkeep,
   input                s_axis_qdma_h2c_tlast,
-  //input   [15:0]       s_axis_qdma_h2c_tuser_size,
+  input   [15:0]       s_axis_qdma_h2c_tuser_size,
   //input   [15:0]       s_axis_qdma_h2c_tuser_src,
   //input   [15:0]       s_axis_qdma_h2c_tuser_dst,
   output               s_axis_qdma_h2c_tready,
@@ -112,7 +111,7 @@ module p2p_250mhz #(
   input  [511:0]       s_axis_adap_rx_250mhz_tdata,
   input   [63:0]       s_axis_adap_rx_250mhz_tkeep,
   input                s_axis_adap_rx_250mhz_tlast,
-  //input   [15:0]       s_axis_adap_rx_250mhz_tuser_size,
+  input   [15:0]       s_axis_adap_rx_250mhz_tuser_size,
   //input   [15:0]       s_axis_adap_rx_250mhz_tuser_src,
   //input   [15:0]       s_axis_adap_rx_250mhz_tuser_dst,
   output               s_axis_adap_rx_250mhz_tready,
@@ -301,8 +300,8 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_adap_rx_250mhz_tlast),                 // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_adap_rx_250mhz_tvalid),                // input wire s_axis_tvalid
         .s_axis_tready   (s_axis_adap_rx_250mhz_tready),                // output wire s_axis_tready
-        .user_metadata_in(),                                             // input wire [47 : 0] user_metadata_in
-        .user_metadata_in_valid(s_axis_adap_rx_250mhz_tvalid),          // input wire user_metadata_in_valid
+        .user_metadata_in (s_axis_adap_rx_250mhz_tuser_size),            // input wire [47 : 0] user_metadata_in
+        .user_metadata_in_valid (s_axis_adap_rx_250mhz_tvalid),          // input wire user_metadata_in_valid
 
         .m_axis_tdata            (axis_signal_tdata),                    // output wire [511 : 0] m_axis_tdata to checksum calculator
         .m_axis_tkeep            (axis_signal_tkeep),                    // output wire [63 : 0] m_axis_tkeep to checksum calculator
@@ -348,7 +347,7 @@ module p2p_250mhz #(
         .s_axis_tlast           (axis_Checksum_0_tlast),               // input wire s_axis_tlast
         .s_axis_tvalid          (axis_Checksum_0_tvalid),              // input wire s_axis_tvalid
         .s_axis_tready          (axis_Checksum_0_tready),              // output wire s_axis_tready
-        .user_metadata_in       (metadata_Checksum_0_out),                                                   
+        .user_metadata_in       (metadata_Checksum_0_out),              //packet size
         .user_metadata_in_valid (metadata_Checksum_0_valid),           // input wire user_metadata_in_valid
         
         .m_axis_tdata    (axis_ingress_tdata),                         // output wire [511 : 0] m_axis_tdata
@@ -394,7 +393,7 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_qdma_h2c_tlast),                       // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_qdma_h2c_tvalid),                      // input wire s_axis_tvalid
         .s_axis_tready   (axis_qdma_h2c_tready),                      // output wire s_axis_tready
-        .user_metadata_in(),
+        .user_metadata_in (s_axis_qdma_h2c_tuser_size),               // packet size
         .user_metadata_in_valid(s_axis_qdma_h2c_tvalid),       // input wire user_metadata_in_valid
 
         .m_axis_tdata      (axis_egress_tdata),                       // output wire [511 : 0] m_axis_tdata
