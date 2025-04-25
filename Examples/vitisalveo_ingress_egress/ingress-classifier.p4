@@ -318,7 +318,7 @@ parser IngrClassParser(
         // Clear input metadata that we will never read
         meta.is_scion = 0;
         meta.hop_fields = 0;
-        meta.payload_offset = 0;
+        meta.payload_offset = 54;  // updated value
 
         pkt.extract(hdr.ether);
         transition select (hdr.ether.etype) {

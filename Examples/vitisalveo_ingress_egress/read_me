@@ -1,7 +1,6 @@
-after bulding, please configure axi stream swicth instance 0 and 1.
+after bulding, please check axi stream swicth instance 0 config.
 
-axi_switch_0: tkeep -yes, tlast- yes , tuser width - 11
-axi_switch_1: tkeep- yes, tlast- yes, arbitrate on tlast transfer -yes, arbitrate on maximun number of transfers - 25
+axi_switch_0: tkeep -yes, tlast- yes , tuser width - 27
 
-then run synthesis
+
 

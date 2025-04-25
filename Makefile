@@ -28,7 +28,7 @@ $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 	$(eval tag=$@_$(build_timestamp))
 	$(eval user_plugin=../../Examples/$@)
 	$(eval DIST_APP_DIR=$(DIST_DIR)/$(board)_$(tag)_dist)
-	#$(eval post_impl=$(if_synth))
+	$(eval post_impl=$(if_synth))
 	$(foreach arg, $(SYN_ARGS_LIST), $(eval $(arg)=$(if_synth)))
 	$(eval TCL_ARGS=$(foreach arg, $(TCL_ARGS_LIST), -$(arg) $($(arg))))
 	$(info TCL_ARGS=$(TCL_ARGS))
@@ -43,20 +43,18 @@ $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir)
 	cd open-nic-shell/script && vivado -mode batch -source build.tcl -tclargs $(TCL_ARGS) | tee $(cur_dir)/build_$(tag).log
 
-	#@if [ $(if_synth) = 1 ]; then { \
+	@if [ $(if_synth) = 1 ]; then { \
 		echo "Condition is true"; \
-
-		#@[ -d '$(DIST_APP_DIR)' ] || mkdir -p $(DIST_APP_DIR); \
-		#cp -r $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.gen/sources_1/ip/#vitis_net_p4_0/src/sw/drivers $(DIST_APP_DIR)/; \
-		#cd $(DIST_APP_DIR)/drivers && make; \
-		#cd -; \
-		#cp -r Examples/$@/c-driver/* $(DIST_APP_DIR)/drivers/install/; \
-		#cd $(DIST_APP_DIR)/drivers/install && make; \
-		#cd -; \
-		#cp $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.runs/impl_1/open_nic_shell.mcs $(DIST_APP_DIR)/$@.mcs; \
-
-	#}; \
-	#fi
+		@[ -d '$(DIST_APP_DIR)' ] || mkdir -p $(DIST_APP_DIR); \
+		cp -r $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.gen/sources_1/ip/vitis_net_p4_0/src/sw/drivers $(DIST_APP_DIR)/; \
+		cd $(DIST_APP_DIR)/drivers && make; \
+		cd -; \
+		cp -r Examples/$@/c-driver/* $(DIST_APP_DIR)/drivers/install/; \
+		cd $(DIST_APP_DIR)/drivers/install && make; \
+		cd -; \
+		cp $(build_dir)/$(board)_$(tag)/open_nic_shell/open_nic_shell.runs/impl_1/open_nic_shell.mcs $(DIST_APP_DIR)/$@.mcs; \
+	}; \
+	fi
 
 shell: CHECK_VIVADO_VER
 	$(eval tag=$@_$(build_timestamp))
