@@ -11,6 +11,8 @@
 #define IPV4_HDR_MIN_SIZE_BYTES 20
 #define IPV6_HDR_SIZE_BYTES 40
 #define UDP_HDR_SIZE_BYTES 8
+#define TCP_HDR_SIZE_BYTES 20
+#define IPV6_MIN_MTU 1280
 
 typedef bit<48> mac_addr_t;
 

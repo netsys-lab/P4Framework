@@ -41,6 +41,7 @@ set ADDR_WIDTH 14
 read_verilog -quiet -sv p2p_250mhz.sv
 read_verilog -quiet -sv ingress_checksum_calculator.sv  ;
 read_verilog -quiet -sv calculator_UDP_chksm_egress.sv  ;
+read_verilog -quiet -sv axi_stream_arbiter.sv  ;
 
 # Create and configure the first VitisNetP4 IP instance
 create_ip -name vitis_net_p4 -vendor xilinx.com -library ip -module_name vitis_net_p4_0
@@ -72,23 +73,64 @@ set_property -dict [list \
     CONFIG.TDATA_NUM_BYTES {64} \
     CONFIG.ROUTING_MODE {1} \
     CONFIG.DECODER_REG {1} \
+    CONFIG.DECODER_REG {1} \
+    CONFIG.HAS_TKEEP {1} \
+    CONFIG.HAS_TLAST {1} \
+    CONFIG.TUSER_WIDTH {11} \
 ] [get_ips axis_switch_0]
 
 generate_target all [get_ips axis_switch_0]
 
 #Create and configure axi stream switch ip 1
-create_ip -name axis_switch -vendor xilinx.com -library ip -module_name axis_switch_1
+#create_ip -name axis_switch -vendor xilinx.com -library ip -module_name axis_switch_1
 
+#set_property -dict [list \
+#    CONFIG.NUM_SI {2} \
+#    CONFIG.NUM_MI {1} \
+#    CONFIG.ARB_ALGORITHM {1} \
+#    CONFIG.TDATA_NUM_BYTES {64} \
+#    CONFIG.ROUTING_MODE {0} \
+#    CONFIG.DECODER_REG {1} \
+#    CONFIG.HAS_TKEEP {1} \
+#    CONFIG.HAS_TLAST {1} \
+#] [get_ips axis_switch_1]
+
+#generate_target all [get_ips axis_switch_1]
+
+# Create the AXI Stream FIFO IP core
+create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name axis_data_fifo_0
+
+# Configure the FIFO
 set_property -dict [list \
-    CONFIG.NUM_SI {2} \
-    CONFIG.NUM_MI {1} \
-    CONFIG.ARB_ALGORITHM {1} \
     CONFIG.TDATA_NUM_BYTES {64} \
-    CONFIG.ROUTING_MODE {0} \
-    CONFIG.DECODER_REG {1} \
-] [get_ips axis_switch_1]
+    CONFIG.FIFO_DEPTH {512} \
+    CONFIG.HAS_TKEEP {1} \
+    CONFIG.HAS_TLAST {1} \
+    CONFIG.HAS_TREADY {1} \
+    CONFIG.HAS_TSTRB {0} \
+    CONFIG.TUSER_WIDTH {0} \
+] [get_ips axis_data_fifo_0]
 
-generate_target all [get_ips axis_switch_1]
+# Generate the IP core
+generate_target all [get_ips axis_data_fifo_0]
+synth_ip [get_ips axis_data_fifo_0]
+
+create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name axis_data_fifo_1
+
+# Configure the FIFO
+set_property -dict [list \
+    CONFIG.TDATA_NUM_BYTES {64} \
+    CONFIG.FIFO_DEPTH {512} \
+    CONFIG.HAS_TKEEP {1} \
+    CONFIG.HAS_TLAST {1} \
+    CONFIG.HAS_TREADY {1} \
+    CONFIG.HAS_TSTRB {0} \
+    CONFIG.TUSER_WIDTH {0} \
+] [get_ips axis_data_fifo_1]
+
+# Generate the IP core
+generate_target all [get_ips axis_data_fifo_1]
+synth_ip [get_ips axis_data_fifo_1]
 
 
 # Configure AXI crossbar for the first VitisNetP4 instance (M00)

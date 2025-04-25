@@ -4,6 +4,19 @@
 #include <core.p4>
 #include <xsa.p4>
 
+#line 1 "p4/include/limits.p4"
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+#ifndef _SCITRA_LIMITS_GUARD
+#define _SCITRA_LIMITS_GUARD
+
+const bit<16> BUS_WIDTH = 64;
+const bit<16> MAX_FRAGMENTS = 24;
+const bit<16> MAX_PACKET_SIZE = MAX_FRAGMENTS * BUS_WIDTH;
+
+#endif // _SCITRA_LIMITS_GUARD
+#line 6 "p4/ingress_classifier.p4"
+
 #line 1 "p4/include/headers.p4"
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -18,6 +31,8 @@
 #define IPV4_HDR_MIN_SIZE_BYTES 20
 #define IPV6_HDR_SIZE_BYTES 40
 #define UDP_HDR_SIZE_BYTES 8
+#define TCP_HDR_SIZE_BYTES 20
+#define IPV6_MIN_MTU 1280
 
 typedef bit<48> mac_addr_t;
 
@@ -260,21 +275,17 @@ header sc_opts_h {
 }
 
 #endif // _SCITRA_HEADERS_GUARD
-#line 6 "p4/ingress_classifier.p4"
+#line 7 "p4/ingress_classifier.p4"
 
 
 typedef bit<10> payload_offset_t;
 
-struct tuser_t
-{
-    bit<1> is_scion;
-    bit<6> hop_fields;
-    payload_offset_t payload_offset;
-}
-
 struct metadata_t
 {
-    tuser_t axis_tuser;
+    bit<16>          size;
+    bit<1>           is_scion;
+    bit<6>           hop_fields;
+    payload_offset_t payload_offset;
 }
 
 struct headers_t
@@ -305,9 +316,9 @@ parser IngrClassParser(
 {
     state start {
         // Clear input metadata that we will never read
-        meta.axis_tuser.is_scion = 0;
-        meta.axis_tuser.hop_fields = 0;
-        meta.axis_tuser.payload_offset = 0;
+        meta.is_scion = 0;
+        meta.hop_fields = 0;
+        meta.payload_offset = 0;
 
         pkt.extract(hdr.ether);
         transition select (hdr.ether.etype) {
@@ -389,8 +400,12 @@ parser IngrClassParser(
 // Processing //
 ////////////////
 
-const bit<1> COUNTER_INDEX_IPV4 = 0;
-const bit<1> COUNTER_INDEX_IPV6 = 1;
+const bit<3> CNT_DROPPED = 0;
+const bit<3> CNT_OTHER = 1;
+const bit<3> CNT_TOTAL_IPV4 = 2;
+const bit<3> CNT_TOTAL_IPV6 = 3;
+const bit<3> CNT_SCION_IPV4 = 4;
+const bit<3> CNT_SCION_IPV6 = 5;
 
 control IngrClassProcessing(
     inout headers_t           hdr,
@@ -400,9 +415,7 @@ control IngrClassProcessing(
     // === Externs ===
 
     // Counters
-    Counter<bit<48>, bit<1>>(2, CounterType_t.PACKETS) cntTotal;
-    Counter<bit<48>, bit<1>>(2, CounterType_t.PACKETS) cntScion;
-    Counter<bit<48>, bit<1>>(2, CounterType_t.PACKETS) cntDropped;
+    Counter<bit<32>, bit<3>>(6, CounterType_t.PACKETS) cnt_packets;
 
     // IPv4 header checksum verification
     Checksum<bit<16>>(HashAlgorithm_t.ONES_COMPLEMENT16) ipv4_chksum;
@@ -412,16 +425,6 @@ control IngrClassProcessing(
 
     action dropPacket() {
         smeta.drop = 1;
-    }
-
-    action isScionIPv4() {
-        meta.axis_tuser.is_scion = 1;
-        cntScion.count(COUNTER_INDEX_IPV4);
-    }
-
-    action isScionIPv6() {
-        meta.axis_tuser.is_scion = 1;
-        cntScion.count(COUNTER_INDEX_IPV6);
     }
 
     // === Local IP Match Table (IPv4 Underlay) ===
@@ -434,7 +437,7 @@ control IngrClassProcessing(
         actions = {
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 8;
     }
 
@@ -448,7 +451,7 @@ control IngrClassProcessing(
         actions = {
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 8;
     }
 
@@ -456,15 +459,20 @@ control IngrClassProcessing(
     // This table statically associates UDP ports with SCION.
     // Example: All UDP traffic on port 31000 should be treated as SCION.
 
+    action static_ipv4_is_scion() {
+        meta.is_scion = 1;
+        cnt_packets.count(CNT_SCION_IPV4);
+    }
+
     table tab_static_ports_ipv4 {
         key = {
             hdr.udp.dst : exact;
         }
         actions = {
-            isScionIPv4;
+            static_ipv4_is_scion;
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 1024;
     }
 
@@ -472,15 +480,20 @@ control IngrClassProcessing(
     // This table statically associates UDP ports with SCION.
     // Example: All UDP traffic on port 31000 should be treated as SCION.
 
+    action static_ipv6_is_scion() {
+        meta.is_scion = 1;
+        cnt_packets.count(CNT_SCION_IPV6);
+    }
+
     table tab_static_ports_ipv6 {
         key = {
             hdr.udp.dst : exact;
         }
         actions = {
-            isScionIPv6;
+            static_ipv6_is_scion;
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 1024;
     }
 
@@ -489,18 +502,25 @@ control IngrClassProcessing(
     // SCION host. Matches both the destination port (local port) and the source
     // IP and port (remote host).
 
+    Counter<bit<1>, bit<13>>(8192, CounterType_t.PACKETS) cnt_dynamic_ipv4_hit;
+
+    action dynamic_ipv4_is_scion(bit<13> index) {
+        meta.is_scion = 1;
+        cnt_dynamic_ipv4_hit.count(index);
+        cnt_packets.count(CNT_SCION_IPV4);
+    }
+
     table tab_dynamic_ports_ipv4 {
         key = {
             hdr.ipv4.src : exact;
             hdr.udp.src  : exact;
             hdr.udp.dst  : exact;
-
         }
         actions = {
-            isScionIPv4;
+            dynamic_ipv4_is_scion;
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 8192;
     }
 
@@ -509,18 +529,25 @@ control IngrClassProcessing(
     // SCION host. Matches both the destination port (local port) and the source
     // IP and port (remote host).
 
+    Counter<bit<1>, bit<13>>(8192, CounterType_t.PACKETS) cnt_dynamic_ipv6_hit;
+
+    action dynamic_ipv6_is_scion(bit<13> index) {
+        meta.is_scion = 1;
+        cnt_dynamic_ipv6_hit.count(index);
+        cnt_packets.count(CNT_SCION_IPV6);
+    }
+
     table tab_dynamic_ports_ipv6 {
         key = {
             hdr.ipv6.src : exact;
             hdr.udp.src  : exact;
             hdr.udp.dst  : exact;
-
         }
         actions = {
-            isScionIPv6;
+            dynamic_ipv6_is_scion;
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 8192;
     }
 
@@ -528,7 +555,7 @@ control IngrClassProcessing(
     // packet starting from the calculated offset so we can verify the UDP
     // checksum afterwards.
     action setPayloadOffset(payload_offset_t offset) {
-        meta.axis_tuser.payload_offset = offset;
+        meta.payload_offset = offset;
     }
 
     // === Main ===
@@ -536,12 +563,21 @@ control IngrClassProcessing(
         // Ignore parser errors (packet might be too short if it was not SCION).
         // If it could be SCION, sum up the segment lengths for use in the
         // ingress translator's parser.
+
+        // Drop packets that are too large for the checksum unit
+        if (meta.size > MAX_PACKET_SIZE) {
+            dropPacket();
+            return;
+        }
+
+        // Calculate total number of hop fields for ingress translator parser
         if (hdr.path_meta.isValid()) {
-            meta.axis_tuser.hop_fields = hdr.path_meta.seg0_len
+            meta.hop_fields = hdr.path_meta.seg0_len
                 + hdr.path_meta.seg1_len + hdr.path_meta.seg2_len;
         }
+
         if (hdr.ipv4.isValid()) {
-            cntTotal.count(COUNTER_INDEX_IPV4);
+            cnt_packets.count(CNT_TOTAL_IPV4);
             ipv4_chksum.apply({
                 hdr.ipv4.version,
                 hdr.ipv4.ihl,
@@ -556,12 +592,12 @@ control IngrClassProcessing(
                 hdr.ipv4.dst
             }, expected_chksum);
             if (hdr.ipv4.chksum != expected_chksum) {
-                cntDropped.count(COUNTER_INDEX_IPV4);
+                cnt_packets.count(CNT_DROPPED);
                 dropPacket();
                 return;
             }
+            setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV4_HDR_MIN_SIZE_BYTES);
             if (hdr.udp.isValid()) {
-                setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV4_HDR_MIN_SIZE_BYTES);
                 if (tab_local_addr_ipv4.apply().hit) {
                     if (!tab_static_ports_ipv4.apply().hit) {
                         tab_dynamic_ports_ipv4.apply();
@@ -569,15 +605,17 @@ control IngrClassProcessing(
                 }
             }
         } else if (hdr.ipv6.isValid()) {
-            cntTotal.count(COUNTER_INDEX_IPV6);
+            cnt_packets.count(CNT_TOTAL_IPV6);
+            setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV6_HDR_SIZE_BYTES);
             if (hdr.udp.isValid()) {
-                setPayloadOffset(ETH_HDR_SIZE_BYTES + IPV6_HDR_SIZE_BYTES);
                 if (tab_local_addr_ipv6.apply().hit) {
                     if (!tab_static_ports_ipv6.apply().hit) {
-                        tab_dynamic_ports_ipv6.apply();
+                    tab_dynamic_ports_ipv6.apply();
                     }
                 }
             }
+        } else {
+            cnt_packets.count(CNT_OTHER);
         }
     }
 }

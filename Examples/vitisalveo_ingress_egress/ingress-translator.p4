@@ -18,6 +18,8 @@
 #define IPV4_HDR_MIN_SIZE_BYTES 20
 #define IPV6_HDR_SIZE_BYTES 40
 #define UDP_HDR_SIZE_BYTES 8
+#define TCP_HDR_SIZE_BYTES 20
+#define IPV6_MIN_MTU 1280
 
 typedef bit<48> mac_addr_t;
 
@@ -262,6 +264,29 @@ header sc_opts_h {
 #endif // _SCITRA_HEADERS_GUARD
 #line 6 "p4/ingress_translator.p4"
 
+#line 1 "p4/include/cpu_header.p4"
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+#ifndef _CPU_HEADER_GUARD
+#define _CPU_HEADER_GUARD
+
+#define CPU_PORT 13666
+#define CPU_HDR_SIZE_BYTES 4
+
+typedef bit<8> to_cpu_reason_t;
+const to_cpu_reason_t TO_CPU_REASON_SCMP = 0;
+const to_cpu_reason_t TO_CPU_REASON_ICMP = 1;
+const to_cpu_reason_t TO_CPU_REASON_NO_PATH = 2;
+
+header cpu_h
+{
+    to_cpu_reason_t reason;
+    bit<24>         reserved;
+};
+
+#endif // _CPU_HEADER_GUARD
+#line 7 "p4/ingress_translator.p4"
+
 #line 1 "p4/include/address_mapping.p4"
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -281,20 +306,15 @@ header sc_opts_h {
 #define extract_host_v6(ip) ip[63:0]
 
 #endif // _SCITRA_ADDR_MAPPING_GUARD
-#line 7 "p4/ingress_translator.p4"
+#line 8 "p4/ingress_translator.p4"
 
-
-struct tuser_t
-{
-    bit<1>  is_scion;
-    // If is_scion is 1, hop_fields is the total number of hop fields in the packet.
-    bit<6> hop_fields;
-    bit<16> payload_chksum;
-}
 
 struct metadata_t
 {
-    tuser_t axis_tuser;
+    // If is_scion is 1, hop_fields is the total number of hop fields in the packet.
+    bit<1>  is_scion;
+    bit<6>  hop_fields;
+    bit<16> payload_chksum;
 }
 
 struct scion_t {
@@ -332,15 +352,15 @@ header sc_hop_blob2_h {
     bit<(2*SC_HOP_FIELD_BITS)> data;
 }
 
-
 struct headers_t
 {
     ethernet_h ether;
     // Underlay
-    ipv4_h     ipv4;
-    ipv6_h     ipv6;
-    ipv6_h     new_ipv6;
-    udp_h      outer_udp;
+    ipv4_h ipv4;
+    ipv6_h ipv6;
+    udp_h  outer_udp;
+    // To CPU
+    cpu_h cpu;
     // SCION
     sc_common_h       scion_common;
     sc_host_addr_4_h  scion_dst_host_4;
@@ -385,15 +405,6 @@ parser IngrTransParser(
     inout standard_metadata_t smeta)
 {
     state start {
-        transition select (meta.axis_tuser.is_scion) {
-            // FIXME: For proper checksum offload we need the check packets we
-            // don't translate as well.
-            0: accept;
-            1: ethernet;
-        }
-    }
-
-    state ethernet {
         pkt.extract(hdr.ether);
         transition select (hdr.ether.etype) {
             ETHER_TYPE_IPV4: ipv4;
@@ -407,8 +418,8 @@ parser IngrTransParser(
 
         // don't parse fragments or IPv4 options
         transition select (hdr.ipv4.frag_offset, hdr.ipv4.ihl, hdr.ipv4.protocol) {
-            (0, 5, IP_PROTO_UDP ): outer_udp;
-            default              : accept;
+            (0, 5, IP_PROTO_UDP): outer_udp;
+            default             : accept;
         }
     }
 
@@ -423,7 +434,10 @@ parser IngrTransParser(
 
     state outer_udp {
         pkt.extract(hdr.outer_udp);
-        transition scion;
+        transition select (meta.is_scion) {
+            0: accept;
+            1: scion;
+        }
     }
 
     ///////////
@@ -503,7 +517,7 @@ parser IngrTransParser(
     }
 
     state hop_fields {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x20 &&& 0x20: hop_fields_discard_32;
             default      : hop_fields_32;
         }
@@ -512,14 +526,14 @@ parser IngrTransParser(
     state hop_fields_discard_32 {
         pkt.extract(hdr.path_hf32);
 
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x10 &&& 0x10: hop_fields_discard_16;
             default      : hop_fields_16;
         }
     }
 
     state hop_fields_32 {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x10 &&& 0x10: hop_fields_discard_16;
             default      : hop_fields_16;
         }
@@ -528,14 +542,14 @@ parser IngrTransParser(
     state hop_fields_discard_16 {
         pkt.extract(hdr.path_hf16);
 
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x08 &&& 0x08: hop_fields_discard_8;
             default      : hop_fields_8;
         }
     }
 
     state hop_fields_16 {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x08 &&& 0x08: hop_fields_discard_8;
             default      : hop_fields_8;
         }
@@ -544,14 +558,14 @@ parser IngrTransParser(
     state hop_fields_discard_8 {
         pkt.extract(hdr.path_hf8);
 
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x04 &&& 0x04: hop_fields_discard_4;
             default      : hop_fields_4;
         }
     }
 
     state hop_fields_8 {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x04 &&& 0x04: hop_fields_discard_4;
             default      : hop_fields_4;
         }
@@ -560,14 +574,14 @@ parser IngrTransParser(
     state hop_fields_discard_4 {
         pkt.extract(hdr.path_hf4);
 
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x02 &&& 0x02: hop_fields_discard_2;
             default      : hop_fields_2;
         }
     }
 
     state hop_fields_4 {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x02 &&& 0x02: hop_fields_discard_2;
             default      : hop_fields_2;
         }
@@ -576,14 +590,14 @@ parser IngrTransParser(
     state hop_fields_discard_2 {
         pkt.extract(hdr.path_hf2);
 
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x01 &&& 0x01: hop_fields_discard_1;
             default      : scion_extensions;
         }
     }
 
     state hop_fields_2 {
-        transition select (meta.axis_tuser.hop_fields) {
+        transition select (meta.hop_fields) {
             0x01 &&& 0x01: hop_fields_discard_1;
             default      : scion_extensions;
         }
@@ -648,7 +662,16 @@ parser IngrTransParser(
 // Processing //
 ////////////////
 
-#define CONTROLLER_PORT 13666
+const bit<2> CNT_DROP_PARSER = 0;
+const bit<2> CNT_DROP_CHKSUM = 1;
+const bit<2> CNT_DROP_SRC_ADDR = 2;
+const bit<2> CNT_DROP_DST_ADDR = 3;
+
+const bit<3> CNT_NOT_TRANSLATED = 0;
+const bit<3> CNT_TO_CPU = 1;
+const bit<3> CNT_SCMP = 2;
+const bit<3> CNT_UDP = 3;
+const bit<3> CNT_TCP = 4;
 
 control IngrTransProcessing(
     inout headers_t           hdr,
@@ -657,25 +680,23 @@ control IngrTransProcessing(
 {
     // === Variables ===
 
-    bit<16> expected_chksum;
+    bit<16> checksum = 0;
+    bit<128> new_ipv6_src = 0;
+    bit<128> new_ipv6_dst = 0;
 
     // === Externs ===
 
-    Checksum<bit<16>>(HashAlgorithm_t.ONES_COMPLEMENT16) udp_chksum;
+    // Counters
+    Counter<bit<32>, bit<2>>(4, CounterType_t.PACKETS) cntDropped;
+    Counter<bit<32>, bit<3>>(5, CounterType_t.PACKETS) cntTranslated;
+
+    // Checksum verification
+    Checksum<bit<16>>(HashAlgorithm_t.ONES_COMPLEMENT16) chksum_ext;
 
     /// == Global Actions ===
 
     action dropPacket() {
         smeta.drop = 1;
-    }
-
-    // Encapsulate in UDP and  to controller
-    action divertToController(bit<16> ip_payload_len) {
-        hdr.udp.setValid();
-        hdr.udp.src = CONTROLLER_PORT;
-        hdr.udp.dst = CONTROLLER_PORT;
-        hdr.udp.length = ip_payload_len;
-        hdr.udp.chksum = 0;
     }
 
     // === Destination IA Table ===
@@ -690,7 +711,7 @@ control IngrTransProcessing(
             dropPacket;
             NoAction;
         }
-        default_action = NoAction();
+        const default_action = NoAction();
         size = 8;
     }
 
@@ -704,22 +725,22 @@ control IngrTransProcessing(
 
     // for BGP-style ASNs
     action translateSource46BGP() {
-        extract_prefix(hdr.new_ipv6.src) = SCION_PREFIX;
-        extract_isd(hdr.new_ipv6.src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(hdr.new_ipv6.src) = 1w0 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
-        extract_network(hdr.new_ipv6.src) = 0;
-        extract_host_prefix(hdr.new_ipv6.src) = 0xffff;
-        extract_host_v4(hdr.new_ipv6.src) = hdr.scion_src_host_4.addr;
+        extract_prefix(new_ipv6_src) = SCION_PREFIX;
+        extract_isd(new_ipv6_src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
+        extract_asn(new_ipv6_src) = 1w0 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
+        extract_network(new_ipv6_src) = 0;
+        extract_host_prefix(new_ipv6_src) = 0xffff;
+        extract_host_v4(new_ipv6_src) = hdr.scion_src_host_4.addr;
     }
 
     // for SCION-style public ASNs
     action translateSource46SCION() {
-        extract_prefix(hdr.new_ipv6.src) = SCION_PREFIX;
-        extract_isd(hdr.new_ipv6.src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(hdr.new_ipv6.src) = 1w1 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
-        extract_network(hdr.new_ipv6.src) = 0;
-        extract_host_prefix(hdr.new_ipv6.src) = 0xffff;
-        extract_host_v4(hdr.new_ipv6.src) = hdr.scion_src_host_4.addr;
+        extract_prefix(new_ipv6_src) = SCION_PREFIX;
+        extract_isd(new_ipv6_src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
+        extract_asn(new_ipv6_src) = 1w1 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
+        extract_network(new_ipv6_src) = 0;
+        extract_host_prefix(new_ipv6_src) = 0xffff;
+        extract_host_v4(new_ipv6_src) = hdr.scion_src_host_4.addr;
     }
 
     table tab_source_translation_46 {
@@ -732,7 +753,7 @@ control IngrTransProcessing(
             translateSource46SCION;
             dropPacket;
         }
-        default_action = dropPacket();
+        const default_action = dropPacket();
         size = 2;
     }
 
@@ -746,22 +767,22 @@ control IngrTransProcessing(
 
     // for BGP-style ASNs
     action translateDest46BGP() {
-        extract_prefix(hdr.new_ipv6.dst) = SCION_PREFIX;
-        extract_isd(hdr.new_ipv6.dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(hdr.new_ipv6.dst) = 1w0 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
-        extract_network(hdr.new_ipv6.dst) = 0;
-        extract_host_prefix(hdr.new_ipv6.dst) = 0xffff;
-        extract_host_v4(hdr.new_ipv6.dst) = hdr.scion_dst_host_4.addr;
+        extract_prefix(new_ipv6_dst) = SCION_PREFIX;
+        extract_isd(new_ipv6_dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
+        extract_asn(new_ipv6_dst) = 1w0 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
+        extract_network(new_ipv6_dst) = 0;
+        extract_host_prefix(new_ipv6_dst) = 0xffff;
+        extract_host_v4(new_ipv6_dst) = hdr.scion_dst_host_4.addr;
     }
 
     // for SCION-style public ASNs
     action translateDest46SCION() {
-        extract_prefix(hdr.new_ipv6.dst) = SCION_PREFIX;
-        extract_isd(hdr.new_ipv6.dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(hdr.new_ipv6.dst) = 1w1 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
-        extract_network(hdr.new_ipv6.dst) = 0;
-        extract_host_prefix(hdr.new_ipv6.dst) = 0xffff;
-        extract_host_v4(hdr.new_ipv6.dst) = hdr.scion_dst_host_4.addr;
+        extract_prefix(new_ipv6_dst) = SCION_PREFIX;
+        extract_isd(new_ipv6_dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
+        extract_asn(new_ipv6_dst) = 1w1 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
+        extract_network(new_ipv6_dst) = 0;
+        extract_host_prefix(new_ipv6_dst) = 0xffff;
+        extract_host_v4(new_ipv6_dst) = hdr.scion_dst_host_4.addr;
     }
 
     table tab_dest_translation_46 {
@@ -774,77 +795,96 @@ control IngrTransProcessing(
             translateDest46SCION;
             dropPacket;
         }
-        default_action = dropPacket();
+        const default_action = dropPacket();
         size = 2;
+    }
+
+    // === SCMP Translation Table ===
+    // Either translate SCMP to ICMP directly or forward to the CPU.
+
+    action scmpTranslate() {
+        hdr.ipv6.next_hdr = IP_PROTO_ICMPv6;
+        cntTranslated.count(CNT_SCMP);
+    }
+
+    // Encapsulate in UDP and  to controller
+    action scmpToCPU() {
+        mac_addr_t temp = hdr.ether.dst;
+        hdr.ether.dst = hdr.ether.src;
+        hdr.ether.src = temp;
+
+        hdr.ipv6.next_hdr = IP_PROTO_UDP;
+        hdr.ipv6.payload_len = hdr.ipv6.payload_len + UDP_HDR_SIZE_BYTES + CPU_HDR_SIZE_BYTES;
+
+        hdr.ipv6.dst = hdr.ipv6.src;
+
+        hdr.outer_udp.setValid();
+        hdr.outer_udp.src = 0;
+        hdr.outer_udp.dst = CPU_PORT;
+        hdr.outer_udp.length = hdr.ipv6.payload_len;
+        hdr.outer_udp.chksum = 0;
+
+        hdr.cpu.setValid();
+        hdr.cpu = { TO_CPU_REASON_SCMP, 0 };
+
+        cntTranslated.count(CNT_TO_CPU);
+    }
+
+    table tab_scmp {
+        key = {
+            hdr.cmp.type : exact;
+        }
+        actions = {
+            scmpTranslate;
+            scmpToCPU;
+        }
+        const default_action = scmpToCPU();
+        direct_match = true;
     }
 
     // === Main ===
     apply {
         // Check parser errors
         if (smeta.parser_error != error.NoError) {
+            cntDropped.count(CNT_DROP_PARSER);
             dropPacket();
         }
 
-        // UDP checksum
-        if (hdr.outer_udp.isValid()) {
-            if (hdr.ipv4.isValid()) {
-                udp_chksum.apply({
+        // Checksum
+        if (hdr.ipv4.isValid()) {
+            if (hdr.ipv4.protocol == IP_PROTO_ICMP) {
+                chksum_ext.apply({
+                    meta.payload_chksum
+                }, checksum);
+            } else {
+                chksum_ext.apply({
                     hdr.ipv4.src,
                     hdr.ipv4.dst,
                     8w0,
                     hdr.ipv4.protocol,
-                    hdr.outer_udp.length,
-                    meta.axis_tuser.payload_chksum
-                }, expected_chksum);
-            } else {
-                udp_chksum.apply({
-                    hdr.ipv6.src,
-                    hdr.ipv6.dst,
-                    hdr.outer_udp.length,
-                    8w0,
-                    hdr.ipv6.next_hdr, // FIXME: revisit when we allow IPv6 extension headers
-                    meta.axis_tuser.payload_chksum
-                }, expected_chksum);
+                    hdr.ipv4.total_len - 4 * (bit<16>)hdr.ipv4.ihl,
+                    meta.payload_chksum
+                }, checksum);
             }
-            if (hdr.outer_udp.chksum != expected_chksum) {
-                dropPacket();
-            }
+        } else if (hdr.ipv6.isValid()) {
+            chksum_ext.apply({
+                hdr.ipv6.src,
+                hdr.ipv6.dst,
+                hdr.ipv6.payload_len, // NOTE: revisit when we allow IPv6 extension headers
+                8w0,
+                hdr.ipv6.next_hdr, // NOTE: revisit when we allow IPv6 extension headers
+                meta.payload_chksum
+            }, checksum);
+        }
+        if (checksum != 0) {
+            cntDropped.count(CNT_DROP_CHKSUM);
+            dropPacket();
         }
 
-        // SCION to IP address translation
+        // SCION to IP header translation
         if (hdr.scion_common.isValid()) {
             // Check if destination IA is correct
             tab_dest_ia.apply();
-
-            // Prepare new IPv6 header
-            hdr.ether.etype = ETHER_TYPE_IPV6;
-            hdr.new_ipv6.setValid();
-            hdr.new_ipv6.version = 6;
-            hdr.new_ipv6.traffic_class = hdr.scion_common.qos;
-            hdr.new_ipv6.flow_label = hdr.scion_common.flow_id;
-            hdr.new_ipv6.hop_limit = 8;
-            hdr.new_ipv6.payload_len = hdr.scion_common.payload_len;
-            if (hdr.scion_hbh_ext.isValid()) {
-                bit<16> hbh_len = ((bit<16>)hdr.scion_hbh_ext.ext_len + 1) << 2;
-                hdr.new_ipv6.payload_len = hdr.new_ipv6.payload_len - hbh_len;
-            }
-            if (hdr.scion_e2e_ext.isValid()) {
-                bit<16> e2e_len = ((bit<16>)hdr.scion_e2e_ext.ext_len + 1) << 2;
-                hdr.new_ipv6.payload_len = hdr.new_ipv6.payload_len - e2e_len;
-            }
-
-            if (hdr.udp.isValid()) {
-                hdr.new_ipv6.next_hdr = IP_PROTO_UDP;
-                hdr.udp.chksum = 0; // never checked
-            } else if (hdr.tcp.isValid()) {
-                hdr.new_ipv6.next_hdr = IP_PROTO_TCP;
-                hdr.tcp.chksum = 0; // never checked
-            } else if (hdr.cmp.isValid()) { // SCMP
-                hdr.new_ipv6.next_hdr = IP_PROTO_UDP;
-                hdr.new_ipv6.payload_len = hdr.new_ipv6.payload_len + 8;
-                hdr.cmp.chksum = 0;
-                divertToController(hdr.new_ipv6.payload_len);
-            }
 
             // Check and translate source address
             if (hdr.scion_src_host_4.isValid()) {
@@ -859,8 +899,9 @@ control IngrTransProcessing(
                 if (extract_prefix(hdr.scion_src_host_16.addr) == SCION_PREFIX
                  && hdr.scion_common.src_isd == (bit<16>)(extract_isd(hdr.scion_src_host_16.addr))
                  && hdr.scion_common.src_asn == asn) {
-                    hdr.new_ipv6.src = hdr.scion_src_host_16.addr;
+                    new_ipv6_src = hdr.scion_src_host_16.addr;
                 } else {
+                    cntDropped.count(CNT_DROP_SRC_ADDR);
                     dropPacket();
                 }
             }
@@ -870,20 +911,60 @@ control IngrTransProcessing(
                 if (hdr.ipv4.isValid() && hdr.ipv4.dst == hdr.scion_dst_host_4.addr) {
                     tab_dest_translation_46.apply();
                 } else {
+                    cntDropped.count(CNT_DROP_DST_ADDR);
                     dropPacket();
                 }
             } else if (hdr.scion_dst_host_16.isValid()) {
                 if (hdr.ipv6.isValid() && hdr.ipv6.dst == hdr.scion_dst_host_16.addr) {
-                    hdr.new_ipv6.dst = hdr.scion_dst_host_16.addr;
+                    new_ipv6_dst = hdr.scion_dst_host_16.addr;
                 } else {
+                    cntDropped.count(CNT_DROP_DST_ADDR);
                     dropPacket();
                 }
             }
+
+            // Prepare new IPv6 header
+            hdr.ipv4.setInvalid();
+            hdr.ipv6.setValid();
+            hdr.outer_udp.setInvalid();
+            hdr.ether.etype = ETHER_TYPE_IPV6;
+            hdr.ipv6.setValid();
+            hdr.ipv6.version = 6;
+            hdr.ipv6.traffic_class = hdr.scion_common.qos;
+            hdr.ipv6.flow_label = hdr.scion_common.flow_id;
+            hdr.ipv6.hop_limit = 8;
+            hdr.ipv6.src = new_ipv6_src;
+            hdr.ipv6.dst = new_ipv6_dst;
+            hdr.ipv6.payload_len = hdr.scion_common.payload_len;
+            if (hdr.scion_hbh_ext.isValid()) {
+                bit<16> hbh_len = ((bit<16>)hdr.scion_hbh_ext.ext_len + 1) << 2;
+                hdr.ipv6.payload_len = hdr.ipv6.payload_len - hbh_len;
+            }
+            if (hdr.scion_e2e_ext.isValid()) {
+                bit<16> e2e_len = ((bit<16>)hdr.scion_e2e_ext.ext_len + 1) << 2;
+                hdr.ipv6.payload_len = hdr.ipv6.payload_len - e2e_len;
+            }
+
+            if (hdr.udp.isValid()) {
+                hdr.ipv6.next_hdr = IP_PROTO_UDP;
+                hdr.udp.chksum = 0; // not checked by host
+                cntTranslated.count(CNT_UDP);
+            } else if (hdr.tcp.isValid()) {
+                hdr.ipv6.next_hdr = IP_PROTO_TCP;
+                hdr.tcp.chksum = 0; // not checked by host
+                cntTranslated.count(CNT_TCP);
+            } else if (hdr.cmp.isValid()) { // SCMP
+                tab_scmp.apply();
+                hdr.cmp.chksum = 0; // not checked by host
+            }
+        } else {
+            cntTranslated.count(CNT_NOT_TRANSLATED);
         }
+
         // Clear output metadata that is no longer useful
-        meta.axis_tuser.is_scion = 0;
-        meta.axis_tuser.hop_fields = 0;
-        meta.axis_tuser.payload_chksum = 0;
+        meta.is_scion = 0;
+        meta.hop_fields = 0;
+        meta.payload_chksum = 0;
     }
 }
 
@@ -899,7 +980,10 @@ control IngrTransDeparser(
 {
     apply {
         pkt.emit(hdr.ether);
-        pkt.emit(hdr.new_ipv6);
+        pkt.emit(hdr.ipv4);
+        pkt.emit(hdr.ipv6);
+        pkt.emit(hdr.outer_udp);
+        pkt.emit(hdr.cpu);
         pkt.emit(hdr.tcp);
         pkt.emit(hdr.udp);
         pkt.emit(hdr.cmp);

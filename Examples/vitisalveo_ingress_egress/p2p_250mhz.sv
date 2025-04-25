@@ -81,7 +81,7 @@ module p2p_250mhz #(
   input  [511:0]       s_axis_qdma_h2c_tdata,
   input   [63:0]       s_axis_qdma_h2c_tkeep,
   input                s_axis_qdma_h2c_tlast,
-  //input   [15:0]       s_axis_qdma_h2c_tuser_size,
+  input   [15:0]       s_axis_qdma_h2c_tuser_size,
   //input   [15:0]       s_axis_qdma_h2c_tuser_src,
   //input   [15:0]       s_axis_qdma_h2c_tuser_dst,
   output               s_axis_qdma_h2c_tready,
@@ -111,7 +111,7 @@ module p2p_250mhz #(
   input  [511:0]       s_axis_adap_rx_250mhz_tdata,
   input   [63:0]       s_axis_adap_rx_250mhz_tkeep,
   input                s_axis_adap_rx_250mhz_tlast,
-  //input   [15:0]       s_axis_adap_rx_250mhz_tuser_size,
+  input   [15:0]       s_axis_adap_rx_250mhz_tuser_size,
   //input   [15:0]       s_axis_adap_rx_250mhz_tuser_src,
   //input   [15:0]       s_axis_adap_rx_250mhz_tuser_dst,
   output               s_axis_adap_rx_250mhz_tready,
@@ -210,6 +210,20 @@ module p2p_250mhz #(
     wire [1:0]      ingress_switch_0_tvalid;
     wire [1:0]      ingress_switch_0_tready;
 
+    //  output from fifo 0
+    wire [511:0]   axis_fifo_0_tdata;
+    wire [63:0]    axis_fifo_0_tkeep;
+    wire           axis_fifo_0_tlast;
+    wire           axis_fifo_0_tvalid;
+    wire           axis_fifo_0_tready;
+
+        //  output from fifo 0
+    wire [511:0]   axis_fifo_1_tdata;
+    wire [63:0]    axis_fifo_1_tkeep;
+    wire           axis_fifo_1_tlast;
+    wire           axis_fifo_1_tvalid;
+    wire           axis_fifo_1_tready;
+
 
     //output from axi stream switch 0 to axi stream switch 1(slave 2-lower priority)
     wire [511:0] axis_switch_0_tdata;
@@ -286,12 +300,8 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_adap_rx_250mhz_tlast),                 // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_adap_rx_250mhz_tvalid),                // input wire s_axis_tvalid
         .s_axis_tready   (s_axis_adap_rx_250mhz_tready),                // output wire s_axis_tready
-//      .user_metadata_in({s_axis_adap_rx_250mhz_tuser_size,
-//			   s_axis_adap_rx_250mhz_tuser_src,
-//			   s_axis_adap_rx_250mhz_tuser_dst
-//			   }
-//                        ),                                             // input wire [47 : 0] user_metadata_in
-//        .user_metadata_in_valid(s_axis_adap_rx_250mhz_tvalid),         // input wire user_metadata_in_valid
+        .user_metadata_in (s_axis_adap_rx_250mhz_tuser_size),            // input wire [47 : 0] user_metadata_in
+        .user_metadata_in_valid (s_axis_adap_rx_250mhz_tvalid),          // input wire user_metadata_in_valid
 
         .m_axis_tdata            (axis_signal_tdata),                    // output wire [511 : 0] m_axis_tdata to checksum calculator
         .m_axis_tkeep            (axis_signal_tkeep),                    // output wire [63 : 0] m_axis_tkeep to checksum calculator
@@ -337,7 +347,7 @@ module p2p_250mhz #(
         .s_axis_tlast           (axis_Checksum_0_tlast),               // input wire s_axis_tlast
         .s_axis_tvalid          (axis_Checksum_0_tvalid),              // input wire s_axis_tvalid
         .s_axis_tready          (axis_Checksum_0_tready),              // output wire s_axis_tready
-        .user_metadata_in       (metadata_Checksum_0_out),                                                   
+        .user_metadata_in       (metadata_Checksum_0_out),              //packet size
         .user_metadata_in_valid (metadata_Checksum_0_valid),           // input wire user_metadata_in_valid
         
         .m_axis_tdata    (axis_ingress_tdata),                         // output wire [511 : 0] m_axis_tdata
@@ -345,12 +355,8 @@ module p2p_250mhz #(
         .m_axis_tlast    (axis_ingress_tlast),                         // output wire m_axis_tlast
         .m_axis_tvalid   (axis_ingress_tvalid),                        // output wire m_axis_tvalid
         .m_axis_tready   (axis_ingress_tready),                        // input wire m_axis_tready
-        //.user_metadata_out({m_axis_qdma_c2h_tuser_size,
-		//	    m_axis_qdma_c2h_tuser_src,
-		//	     m_axis_qdma_c2h_tuser_dst
-        //                   }),                                      // output wire [47 : 0] user_metadata_out
-
-        //.user_metadata_out_valid(user_metadata_out_valid),          // output wire user_metadata_out_valid        
+        .user_metadata_out(),                                         // output wire [47 : 0] user_metadata_out
+        .user_metadata_out_valid(),                                   // output wire user_metadata_out_valid
 
         .s_axi_araddr    (s_axil_new_araddr),                         // input wire [12 : 0] s_axi_araddr
         .s_axi_arready   (s_axil_new_arready),                        // output wire s_axi_arready
@@ -387,10 +393,8 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_qdma_h2c_tlast),                       // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_qdma_h2c_tvalid),                      // input wire s_axis_tvalid
         .s_axis_tready   (axis_qdma_h2c_tready),                      // output wire s_axis_tready
-        //.user_metadata_in({s_axis_qdma_h2c_tuser_size,
-        //s_axis_qdma_h2c_tuser_src,
-        //s_axis_qdma_h2c_tuser_dst}),
-        //.user_metadata_in_valid(metadata_out_valid_Checksum),       // input wire user_metadata_in_valid
+        .user_metadata_in (s_axis_qdma_h2c_tuser_size),               // packet size
+        .user_metadata_in_valid(s_axis_qdma_h2c_tvalid),       // input wire user_metadata_in_valid
 
         .m_axis_tdata      (axis_egress_tdata),                       // output wire [511 : 0] m_axis_tdata
         .m_axis_tkeep      (axis_egress_tkeep),                       // output wire [63 : 0] m_axis_tkeep
@@ -439,9 +443,9 @@ module p2p_250mhz #(
         .m_axis_tkeep    (m_axis_adap_tx_250mhz_tkeep),             // output wire [63 : 0] m_axis_tkeep
         .m_axis_tlast    (m_axis_adap_tx_250mhz_tlast),             // output wire m_axis_tlast
         .m_axis_tvalid   (m_axis_adap_tx_250mhz_tvalid),            // output wire m_axis_tvalid
-        .m_axis_tready   (m_axis_adap_tx_250mhz_tready)             // input wire m_axis_tready
-        //.user_metadata_out(metadata_out_egress),                  // output wire metadata out
-        //.user_metadata_out_valid(metadata_out_valid_egress),      // output wire user_metadata_out_valid
+        .m_axis_tready   (m_axis_adap_tx_250mhz_tready),             // input wire m_axis_tready
+        .user_metadata_out(),                                       // output wire metadata out
+        .user_metadata_out_valid()                                 // output wire user_metadata_out_valid
         
       );
 
@@ -495,22 +499,22 @@ module p2p_250mhz #(
             );
 
 
-        axis_switch_1 axis_switch_inst_1(
-            .aclk     (axis_aclk),
-            .aresetn  (axis_aresetn),
-
-            .s_axis_tdata  ({axis_switch_0_tdata,  axis_ingress_tdata}  ),
-            .s_axis_tkeep  ({axis_switch_0_tkeep,  axis_ingress_tkeep}  ),
-            .s_axis_tlast  ({axis_switch_0_tlast,  axis_ingress_tlast}  ),
-            .s_axis_tvalid ({axis_switch_0_tvalid, axis_ingress_tvalid} ),
-            .s_axis_tready ({axis_switch_0_tready, axis_ingress_tready} ),
-
-            .m_axis_tdata  (m_axis_qdma_c2h_tdata),
-            .m_axis_tkeep  (m_axis_qdma_c2h_tkeep),
-            .m_axis_tlast  (m_axis_qdma_c2h_tlast),
-            .m_axis_tvalid (m_axis_qdma_c2h_tvalid),
-            .m_axis_tready (m_axis_qdma_c2h_tready)
-        );
+//        (* dont_touch = "true" *) axis_switch_1 axis_switch_inst_1(
+//           .aclk     (axis_aclk),
+//           .aresetn  (axis_aresetn),
+//
+//            .s_axis_tdata  ({axis_switch_0_tdata,  axis_ingress_tdata}  ),
+//            .s_axis_tkeep  ({axis_switch_0_tkeep,  axis_ingress_tkeep}  ),
+//            .s_axis_tlast  ({axis_switch_0_tlast,  axis_ingress_tlast}  ),
+//            .s_axis_tvalid ({axis_switch_0_tvalid, axis_ingress_tvalid} ),
+//            .s_axis_tready ({axis_switch_0_tready, axis_ingress_tready} ),
+//
+//            .m_axis_tdata  (m_axis_qdma_c2h_tdata),
+//            .m_axis_tkeep  (m_axis_qdma_c2h_tkeep),
+//            .m_axis_tlast  (m_axis_qdma_c2h_tlast),
+//            .m_axis_tvalid (m_axis_qdma_c2h_tvalid),
+//            .m_axis_tready (m_axis_qdma_c2h_tready)
+//        );
 
 
 //generate UDP checksum calculator IPs
@@ -563,6 +567,65 @@ module p2p_250mhz #(
         .user_metadata_out       (metadata_Checksum_0_out),      //metadata output to ingress translator
         .user_metadata_out_valid (metadata_Checksum_0_valid)     //metadata valid to ingress translator
     );
+
+        // Instantiate the AXI Stream FIFO
+    axis_data_fifo_0 axis_fifo_0 (
+        .s_axis_aclk(axis_aclk),
+        .s_axis_aresetn(axis_aresetn),
+
+        .s_axis_tdata(axis_ingress_tdata),
+        .s_axis_tkeep(axis_ingress_tkeep),
+        .s_axis_tlast(axis_ingress_tlast),
+        .s_axis_tvalid(axis_ingress_tvalid),
+        .s_axis_tready(axis_ingress_tready),
+
+        .m_axis_tdata(axis_fifo_0_tdata),
+        .m_axis_tkeep(axis_fifo_0_tkeep),
+        .m_axis_tlast(axis_fifo_0_tlast),
+        .m_axis_tvalid(axis_fifo_0_tvalid),
+        .m_axis_tready(axis_fifo_0_tready)
+    );
+
+        // Instantiate the AXI Stream FIFO
+    axis_data_fifo_1 axis_fifo_1 (
+        .s_axis_aclk(axis_aclk),
+        .s_axis_aresetn(axis_aresetn),
+
+        .s_axis_tdata(axis_switch_0_tdata),
+        .s_axis_tkeep(axis_switch_0_tkeep),
+        .s_axis_tlast(axis_switch_0_tlast),
+        .s_axis_tvalid(axis_switch_0_tvalid),
+        .s_axis_tready(axis_switch_0_tready),
+
+        .m_axis_tdata(axis_fifo_1_tdata),
+        .m_axis_tkeep(axis_fifo_1_tkeep),
+        .m_axis_tlast(axis_fifo_1_tlast),
+        .m_axis_tvalid(axis_fifo_1_tvalid),
+        .m_axis_tready(axis_fifo_1_tready)
+    );
+
+
+        // Instantiate the axi_stream_arbiter module
+    (* dont_touch = "true" *) axi_stream_arbiter arbiter_inst (
+        .clk(axis_aclk),
+        .rst_n(axis_aresetn),
+
+        // AXI Stream  inputs
+        .s_axis_tdata({axis_fifo_1_tdata, axis_fifo_0_tdata }),
+        .s_axis_tkeep({axis_fifo_1_tkeep, axis_fifo_0_tkeep}),
+        .s_axis_tvalid({axis_fifo_1_tvalid, axis_fifo_0_tvalid}),
+        .s_axis_tready({axis_fifo_1_tready, axis_fifo_0_tready}),
+        .s_axis_tlast({axis_fifo_1_tlast, axis_fifo_0_tlast}),
+
+        // AXI Stream Master Interface
+        .m_axis_tdata(m_axis_qdma_c2h_tdata),
+        .m_axis_tkeep(m_axis_qdma_c2h_tkeep),
+        .m_axis_tvalid(m_axis_qdma_c2h_tvalid),
+        .m_axis_tready(m_axis_qdma_c2h_tready),
+        .m_axis_tlast(m_axis_qdma_c2h_tlast)
+    );
+
+
 
 
 //axi_stream_pipeline tx_ppl_inst (

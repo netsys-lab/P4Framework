@@ -4,9 +4,12 @@
 #define _CPU_HEADER_GUARD
 
 #define CPU_PORT 13666
+#define CPU_HDR_SIZE_BYTES 4
 
 typedef bit<8> to_cpu_reason_t;
-const to_cpu_reason_t TO_CPU_REASON_NO_PATH = 0;
+const to_cpu_reason_t TO_CPU_REASON_SCMP = 0;
+const to_cpu_reason_t TO_CPU_REASON_ICMP = 1;
+const to_cpu_reason_t TO_CPU_REASON_NO_PATH = 2;
 
 header cpu_h
 {
