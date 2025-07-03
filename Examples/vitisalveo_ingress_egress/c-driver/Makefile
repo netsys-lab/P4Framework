@@ -2,7 +2,7 @@
 
 CC=gcc
 LIBS=-lm
-OBJ=forward_main.c lib/libvitisnetp4drv.so
+OBJ=vitisalveo_ingress_egress.c lib/libvitisnetp4drv.so
 TARGET=driver
 
 TARGET_DBG=driver_debug

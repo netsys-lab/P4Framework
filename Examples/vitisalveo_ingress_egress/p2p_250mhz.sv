@@ -82,8 +82,8 @@ module p2p_250mhz #(
   input   [63:0]       s_axis_qdma_h2c_tkeep,
   input                s_axis_qdma_h2c_tlast,
   input   [15:0]       s_axis_qdma_h2c_tuser_size,
-  //input   [15:0]       s_axis_qdma_h2c_tuser_src,
-  //input   [15:0]       s_axis_qdma_h2c_tuser_dst,
+  input   [15:0]       s_axis_qdma_h2c_tuser_src,
+  input   [15:0]       s_axis_qdma_h2c_tuser_dst,
   output               s_axis_qdma_h2c_tready,
 
   //output from axi stream switch 2- input to QDMA
@@ -128,26 +128,32 @@ module p2p_250mhz #(
   wire axil_aresetn; // Reset is clocked by the 125MHz AXI-Lite clock
   wire axis_aresetn; // Reset is clocked by the 250MHz AXI-Lite clock
 
-  generic_reset #(
-    .NUM_INPUT_CLK  (1),
-    .RESET_DURATION (100)
-  ) axil_reset_inst (
-    .mod_rstn     (mod_rstn),
-    .mod_rst_done (mod_rst_done),
-    .clk          (axil_aclk),
-    .rstn         (axil_aresetn)
-  );
+//  generic_reset #(
+//    .NUM_INPUT_CLK  (1),
+//    .RESET_DURATION (100)
+//  ) axil_reset_inst (
+//    .mod_rstn     (mod_rstn),
+//    .mod_rst_done (mod_rst_done),
+//    .clk          (axil_aclk),
+//    .rstn         (axil_aresetn)
+//  );
 
-  xpm_cdc_async_rst #(
-    .DEST_SYNC_FF(4),
-    .RST_ACTIVE_HIGH(0)
-  ) axis_rstn_cdc (
-    .src_arst(axil_aresetn),
-    .dest_clk(axis_aclk),
-    .dest_arst(axis_aresetn)
-  );
+//  xpm_cdc_async_rst #(
+//    .DEST_SYNC_FF(4),
+//    .RST_ACTIVE_HIGH(0)
+//  ) axis_rstn_cdc (
+//    .src_arst(axil_aresetn),
+//    .dest_clk(axis_aclk),
+//    .dest_arst(axis_aresetn)
+//  );
 
 
+ assign axil_aresetn = mod_rstn;
+ assign axis_aresetn = mod_rstn;
+
+    wire [32:0] ingress_metadata_in;
+    wire [58:0] egress_metadata_in;
+    
     //output from ingress classifier- input to ingress checksum calculator
     wire [511:0] axis_signal_tdata;
     wire [63:0]  axis_signal_tkeep;
@@ -155,7 +161,7 @@ module p2p_250mhz #(
     wire         axis_signal_tvalid;
     wire         axis_signal_tready;
     wire [63:0]  axis_signal_tuser;
-    wire [16:0]  metadata_signal_out;   //bit 0: is_scion, [6:1] hop fields, [16:7] payload offset
+    wire [32:0]  metadata_signal_out;   //bit 0: is_scion, [6:1] hop fields, [16:7] payload offset
     wire         metadata_signal_valid;
 
     //output from ingress checksum calculator instance 0- input to ingress translator
@@ -182,7 +188,7 @@ module p2p_250mhz #(
     wire         axis_egress_tready;
     wire         axis_egress_tdest;
     wire [10:0]  axis_egress_tuser;
-    wire [10:0]  metadata_egress_out;
+    wire [58:0]  metadata_egress_out;
     wire         metadata_egress_valid;    
 
     //output from egress checksum calculator - input to vitis checksum IP
@@ -201,7 +207,7 @@ module p2p_250mhz #(
     wire [1:0]      egress_switch_1_tlast;
     wire [1:0]      egress_switch_1_tvalid;
     wire [1:0]      egress_switch_1_tready;
-    wire [21:0]     egress_switch_1_tuser;
+    wire [53:0]     egress_switch_1_tuser;
 
 //     //input to to axi stream switch 1
     wire [1023:0]   ingress_switch_0_tdata;
@@ -231,7 +237,7 @@ module p2p_250mhz #(
     wire         axis_switch_0_tlast;
     wire         axis_switch_0_tvalid;
     wire         axis_switch_0_tready;
-    wire [10:0]  axis_switch_0_tuser;
+    wire [26:0]  axis_switch_0_tuser;
 
 
     //output from axi stream switch 0 to egress checksum calculator
@@ -240,7 +246,7 @@ module p2p_250mhz #(
     wire         axis_switch_1_tlast;
     wire         axis_switch_1_tvalid;
     wire         axis_switch_1_tready;
-    wire [10:0]  axis_switch_1_tuser;
+    wire [26:0]  axis_switch_1_tuser;
     
     
      //output from axi stream pipeline 
@@ -252,21 +258,21 @@ module p2p_250mhz #(
     wire [10:0]  m_axis_pipeline_tuser;
     
     
-    //    //output from axi stream switch 0 - input to switch 1
+    //    //output from axi stream switch 0 - input to FiFO(AXI arbeiter)
     assign axis_switch_0_tdata    =   egress_switch_1_tdata[511:0];
     assign axis_switch_0_tkeep    =   egress_switch_1_tkeep[63:0];
     assign axis_switch_0_tlast    =   egress_switch_1_tlast[0:0];
-    assign axis_switch_0_tvalid   =   egress_switch_1_tvalid[0:0];
-    assign axis_switch_0_tready   =   egress_switch_1_tready[0:0];
-    assign axis_switch_0_tuser    =   egress_switch_1_tuser[10:0];
+    //assign axis_switch_0_tvalid   =   egress_switch_1_tvalid[0:0];
+    //assign axis_switch_0_tready   =   egress_switch_1_tready[0:0];
+    assign axis_switch_0_tuser    =   egress_switch_1_tuser[26:0];
 
 //  //output from axi stream switch 0 - input to egress checksum calculator
     assign axis_switch_1_tdata  =   egress_switch_1_tdata[1023:512];
     assign axis_switch_1_tkeep  =   egress_switch_1_tkeep[127:64];
     assign axis_switch_1_tlast  =   egress_switch_1_tlast[1:1];
-    assign axis_switch_1_tvalid =   egress_switch_1_tvalid[1:1];
-    assign axis_switch_1_tready =   egress_switch_1_tready[1:1];
-    assign axis_switch_1_tuser  =   egress_switch_1_tuser[21:11];
+    //assign axis_switch_1_tvalid =   egress_switch_1_tvalid[1:1];
+    //assign axis_switch_1_tready =   egress_switch_1_tready[1:1];
+    assign axis_switch_1_tuser  =   egress_switch_1_tuser[53:27];
     
     //input to axi stream switch 1
 //    assign ingress_switch_0_tdata[511:0]   =    axis_ingress_tdata;
@@ -281,7 +287,8 @@ module p2p_250mhz #(
 //    assign ingress_switch_0_tvalid[1:1]       =    axis_switch_0_tvalid;
 //    assign ingress_switch_0_tready[1:1]       =    axis_switch_0_tready;
     
-  
+  assign ingress_metadata_in = {17'b0, s_axis_adap_rx_250mhz_tuser_size};
+  assign egress_metadata_in  = {s_axis_qdma_h2c_tuser_dst, s_axis_qdma_h2c_tuser_src, 10'b0, s_axis_qdma_h2c_tuser_size, 1'b0};  //58 bits
 
   generate for (genvar i = 0; i < NUM_INTF; i++) begin
   
@@ -300,7 +307,7 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_adap_rx_250mhz_tlast),                 // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_adap_rx_250mhz_tvalid),                // input wire s_axis_tvalid
         .s_axis_tready   (s_axis_adap_rx_250mhz_tready),                // output wire s_axis_tready
-        .user_metadata_in (s_axis_adap_rx_250mhz_tuser_size),            // input wire [47 : 0] user_metadata_in
+        .user_metadata_in (ingress_metadata_in),            // input wire [15 : 0] user_metadata_in
         .user_metadata_in_valid (s_axis_adap_rx_250mhz_tvalid),          // input wire user_metadata_in_valid
 
         .m_axis_tdata            (axis_signal_tdata),                    // output wire [511 : 0] m_axis_tdata to checksum calculator
@@ -393,7 +400,8 @@ module p2p_250mhz #(
         .s_axis_tlast    (s_axis_qdma_h2c_tlast),                       // input wire s_axis_tlast
         .s_axis_tvalid   (s_axis_qdma_h2c_tvalid),                      // input wire s_axis_tvalid
         .s_axis_tready   (axis_qdma_h2c_tready),                      // output wire s_axis_tready
-        .user_metadata_in (s_axis_qdma_h2c_tuser_size),               // packet size
+        .user_metadata_in (egress_metadata_in),
+        .s_axis_tdest      (1'b0),              
         .user_metadata_in_valid(s_axis_qdma_h2c_tvalid),       // input wire user_metadata_in_valid
 
         .m_axis_tdata      (axis_egress_tdata),                       // output wire [511 : 0] m_axis_tdata
@@ -488,13 +496,13 @@ module p2p_250mhz #(
                 .s_axis_tvalid (axis_egress_tvalid),
                 .s_axis_tready (axis_egress_tready),
                 .s_axis_tdest  (axis_egress_tdest),
-                .s_axis_tuser  (metadata_egress_out),
+                .s_axis_tuser  (metadata_egress_out[26:0]),
 
                 .m_axis_tdata  (egress_switch_1_tdata  ),
                 .m_axis_tkeep  (egress_switch_1_tkeep  ),
                 .m_axis_tlast  (egress_switch_1_tlast  ),
-                .m_axis_tvalid (egress_switch_1_tvalid ),
-                .m_axis_tready (egress_switch_1_tready ),
+                .m_axis_tvalid ({axis_switch_1_tvalid, axis_switch_0_tvalid} ),
+                .m_axis_tready ({axis_switch_1_tready, axis_switch_0_tready} ),
                 .m_axis_tuser  (egress_switch_1_tuser  )
             );
 

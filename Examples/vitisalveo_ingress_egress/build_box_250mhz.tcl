@@ -76,7 +76,7 @@ set_property -dict [list \
     CONFIG.DECODER_REG {1} \
     CONFIG.HAS_TKEEP {1} \
     CONFIG.HAS_TLAST {1} \
-    CONFIG.TUSER_WIDTH {11} \
+    CONFIG.TUSER_WIDTH {27} \
 ] [get_ips axis_switch_0]
 
 generate_target all [get_ips axis_switch_0]
