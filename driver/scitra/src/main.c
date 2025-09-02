@@ -26,10 +26,10 @@ void print_counters(struct P4Target* target);
 #define TARGET_EG_TRANSLATOR 2
 #define TARGET_EG_CHECKSUM 3
 
-const XilVitisNetP4AddressType BASE_ADDR_IG_CLASSIFIER = 0x08000;
-const XilVitisNetP4AddressType BASE_ADDR_EG_CHECKSUM   = 0x04000;
-const XilVitisNetP4AddressType BASE_ADDR_IG_TRANSLATOR = 0x0c000;
-const XilVitisNetP4AddressType BASE_ADDR_EG_TRANSLATOR = 0x10000;
+const XilVitisNetP4AddressType BASE_ADDR_IG_CLASSIFIER = 0x0000;
+const XilVitisNetP4AddressType BASE_ADDR_IG_TRANSLATOR = 0x1000;
+const XilVitisNetP4AddressType BASE_ADDR_EG_TRANSLATOR = 0x2000;
+const XilVitisNetP4AddressType BASE_ADDR_EG_CHECKSUM   = 0x3000;
 
 char* SYSFILE_PATH = "/sys/devices/pci0000:b2/0000:b2:00.0/0000:b3:00.0/resource2";
 
