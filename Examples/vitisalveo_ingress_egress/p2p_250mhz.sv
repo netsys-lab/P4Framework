@@ -86,7 +86,7 @@ module p2p_250mhz #(
   input   [15:0]       s_axis_qdma_h2c_tuser_dst,
   output               s_axis_qdma_h2c_tready,
 
-  //output from axi stream switch 2- input to QDMA
+  //output from axi stream axi arbeiter input to QDMA
   output               m_axis_qdma_c2h_tvalid,
   output [511:0]       m_axis_qdma_c2h_tdata,
   output  [63:0]       m_axis_qdma_c2h_tkeep,
@@ -197,7 +197,7 @@ module p2p_250mhz #(
     wire         axis_Checksum_1_tlast;
     wire         axis_Checksum_1_tvalid;
     wire         axis_Checksum_1_tready;
-    wire [22:0]  metadata_Checksum_1_out;
+    wire [16:0]  metadata_Checksum_1_out;
     wire         metadata_Checksum_1_valid;
 
 
@@ -256,8 +256,11 @@ module p2p_250mhz #(
     wire         m_axis_pipeline_tvalid;
     wire         m_axis_pipeline_tready;
     wire [10:0]  m_axis_pipeline_tuser;
+
+    //wire [63:0]  qdma_tkeep_in;
     
-    
+    //assign m_axis_qdma_c2h_tkeep    =   qdma_tkeep_in ;  //debug
+
     //    //output from axi stream switch 0 - input to FiFO(AXI arbeiter)
     assign axis_switch_0_tdata    =   egress_switch_1_tdata[511:0];
     assign axis_switch_0_tkeep    =   egress_switch_1_tkeep[63:0];

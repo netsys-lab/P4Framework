@@ -12,7 +12,7 @@ driver_lib=$(driver_install)/lib/libvitisnetp4drv.a
 LIBS=-lm -lreadline
 OBJ=src/main.c src/device.c src/p4_target.c $(driver_lib)
 TARGET=vitis_p4_driver
-CC_FLAGS=-I$(driver_install) -DMOCK_IO=1
+CC_FLAGS=-I$(driver_install)
 CC_REL_FLAGS=-O2
 
 TARGET_DBG=vitis_p4_driver_debug

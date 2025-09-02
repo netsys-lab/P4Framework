@@ -31,7 +31,7 @@ const XilVitisNetP4AddressType BASE_ADDR_EG_CHECKSUM   = 0x04000;
 const XilVitisNetP4AddressType BASE_ADDR_IG_TRANSLATOR = 0x0c000;
 const XilVitisNetP4AddressType BASE_ADDR_EG_TRANSLATOR = 0x10000;
 
-char* SYSFILE_PATH = "/sys/devices/pci0000:3a/0000:3a:00.0/0000:3b:00.0/resource2";
+char* SYSFILE_PATH = "/sys/devices/pci0000:b2/0000:b2:00.0/0000:b3:00.0/resource2";
 
 static const char* CLI_HELP =
     "Commands:\n"
@@ -62,6 +62,7 @@ int main(int argc, char* argv[])
     printf("Enable CMAC port 0\n");
     enable_port0(&device);
 
+    /*
     printf("Initialize driver\n");
     printf("Ingress Classifier\n");
     result = init_target(&targets[TARGET_IG_CLASSIFIER], &device,
@@ -85,6 +86,7 @@ int main(int argc, char* argv[])
     targets[TARGET_EG_TRANSLATOR].prog_name = "Egress Translator";
     targets[TARGET_EG_CHECKSUM].prog_name = "Egress Checksum";
 
+    */
     bool run = true;
     static const char* delim = " ";
     while (run)

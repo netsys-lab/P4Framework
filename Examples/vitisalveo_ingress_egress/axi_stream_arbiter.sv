@@ -174,7 +174,6 @@ module axi_stream_arbiter (
            end
 
             default: begin
-                m_axis_tdata_reg  = 512'b0;
                 m_axis_tkeep_reg  = 64'b0;
                 m_axis_tvalid_reg = 1'b0;
                 m_axis_tlast_reg  = 1'b0;

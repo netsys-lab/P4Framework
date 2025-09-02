@@ -26,16 +26,19 @@ set p4_src2 egress-translator.p4
 set p4_src3 egress_checksum.p4
 
 # Define base addresses for AXI crossbar configuration
-# Base address for dummy
-set BASE_ADDR 0x4000
-# Base address for the first instance
-set BASE_ADDR_0 0x8000
-# Base address for the second instance
-set BASE_ADDR_1 0xC000
-# Base address for the third instance
-set BASE_ADDR_2 0x10000
- # Address width (14 bits corresponds to 16 KB range)
-set ADDR_WIDTH 14
+
+
+# Define base addresses for AXI crossbar configuration
+
+set BASE_ADDR_0 0x0000
+# Base address for ingress classifier
+set BASE_ADDR_1 0x1000
+# Base address for the ingress translator
+set BASE_ADDR_2 0x2000
+# Address width egress translator
+set BASE_ADDR 0x3000
+# Dummy base address
+set ADDR_WIDTH 12
 
 # Read Verilog source
 read_verilog -quiet -sv p2p_250mhz.sv
@@ -140,7 +143,10 @@ set_property -dict [list CONFIG.M00_A00_ADDR_WIDTH "$ADDR_WIDTH" CONFIG.M00_A00_
 set_property -dict [list CONFIG.M02_A00_ADDR_WIDTH "$ADDR_WIDTH" CONFIG.M02_A00_BASE_ADDR "$BASE_ADDR_1"] [get_ips box_250mhz_axi_crossbar]
 
 # Configure AXI crossbar for the second VitisNetP4 instance (M04)
-set_property -dict [list CONFIG.M04_A00_ADDR_WIDTH "$ADDR_WIDTH" CONFIG.M02_A00_BASE_ADDR "$BASE_ADDR_2"] [get_ips box_250mhz_axi_crossbar]
+set_property -dict [list CONFIG.M04_A00_ADDR_WIDTH "$ADDR_WIDTH" CONFIG.M04_A00_BASE_ADDR "$BASE_ADDR_2"] [get_ips box_250mhz_axi_crossbar]
+
+# Configure AXI crossbar for the second VitisNetP4 instance (M04)
+set_property -dict [list CONFIG.M06_A00_ADDR_WIDTH "$ADDR_WIDTH" CONFIG.M06_A00_BASE_ADDR "$BASE_ADDR"] [get_ips box_250mhz_axi_crossbar]
 
 # Set generic for width
 set cur_generic [get_property generic [current_fileset]]
