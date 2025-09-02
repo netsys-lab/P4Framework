@@ -19,10 +19,10 @@ initial begin
   if (USE_PHYS_FUNC == 0) begin
     $fatal("No implementation for USE_PHYS_FUNC = %d", 0);
   end
-  if (NUM_PHYS_FUNC != NUM_CMAC_PORT) begin
-    $fatal("No implementation for NUM_PHYS_FUNC (%d) != NUM_CMAC_PORT (%d)",
-      NUM_PHYS_FUNC, NUM_CMAC_PORT);
-  end
+  //if (NUM_PHYS_FUNC != NUM_CMAC_PORT) begin
+    //$fatal("No implementation for NUM_PHYS_FUNC (%d) != NUM_CMAC_PORT (%d)",
+      //NUM_PHYS_FUNC, NUM_CMAC_PORT);
+  //end
 end
 
 localparam C_NUM_USER_BLOCK = 1;
@@ -34,6 +34,8 @@ assign mod_rst_done[15:C_NUM_USER_BLOCK] = {(16-C_NUM_USER_BLOCK){1'b1}};
 p2p_250mhz #(
   .NUM_INTF (NUM_PHYS_FUNC)
 ) p2p_250mhz_inst (
+
+  //out  from crossbar- in to 250 mhz box vitis ip1-Ingress classifier
   .s_axil_awvalid                   (axil_p2p_awvalid),
   .s_axil_awaddr                    (axil_p2p_awaddr),
   .s_axil_awready                   (axil_p2p_awready),
@@ -51,31 +53,67 @@ p2p_250mhz #(
   .s_axil_rresp                     (axil_p2p_rresp),
   .s_axil_rready                    (axil_p2p_rready),
 
+  //out  from crossbar- in to 250 mhz box vitis ip2 - ingress translator
+  .s_axil_new_awvalid                    (axil_new_awvalid),
+  .s_axil_new_awaddr                     (axil_new_awaddr),
+  .s_axil_new_awready                    (axil_new_awready),
+  .s_axil_new_wvalid                     (axil_new_wvalid),
+  .s_axil_new_wdata                      (axil_new_wdata),
+  .s_axil_new_wready                     (axil_new_wready),
+  .s_axil_new_bvalid                     (axil_new_bvalid),
+  .s_axil_new_bresp                      (axil_new_bresp),
+  .s_axil_new_bready                     (axil_new_bready),
+  .s_axil_new_arvalid                    (axil_new_arvalid),
+  .s_axil_new_araddr                     (axil_new_araddr),
+  .s_axil_new_arready                    (axil_new_arready),
+  .s_axil_new_rvalid                     (axil_new_rvalid),
+  .s_axil_new_rdata                      (axil_new_rdata),
+  .s_axil_new_rresp                      (axil_new_rresp),
+  .s_axil_new_rready                     (axil_new_rready),
+
+  //out  from crossbar- in to 250 mhz box vitis ip3- egress translator
+  .s_axil_egress_awvalid                    (axil_egress_awvalid),
+  .s_axil_egress_awaddr                     (axil_egress_awaddr),
+  .s_axil_egress_awready                    (axil_egress_awready),
+  .s_axil_egress_wvalid                     (axil_egress_wvalid),
+  .s_axil_egress_wdata                      (axil_egress_wdata),
+  .s_axil_egress_wready                     (axil_egress_wready),
+  .s_axil_egress_bvalid                     (axil_egress_bvalid),
+  .s_axil_egress_bresp                      (axil_egress_bresp),
+  .s_axil_egress_bready                     (axil_egress_bready),
+  .s_axil_egress_arvalid                    (axil_egress_arvalid),
+  .s_axil_egress_araddr                     (axil_egress_araddr),
+  .s_axil_egress_arready                    (axil_egress_arready),
+  .s_axil_egress_rvalid                     (axil_egress_rvalid),
+  .s_axil_egress_rdata                      (axil_egress_rdata),
+  .s_axil_egress_rresp                      (axil_egress_rresp),
+  .s_axil_egress_rready                     (axil_egress_rready),
+
   .s_axis_qdma_h2c_tvalid           (s_axis_qdma_h2c_tvalid),
   .s_axis_qdma_h2c_tdata            (s_axis_qdma_h2c_tdata),
   .s_axis_qdma_h2c_tkeep            (s_axis_qdma_h2c_tkeep),
   .s_axis_qdma_h2c_tlast            (s_axis_qdma_h2c_tlast),
   .s_axis_qdma_h2c_tuser_size       (s_axis_qdma_h2c_tuser_size),
-  .s_axis_qdma_h2c_tuser_src        (s_axis_qdma_h2c_tuser_src),
-  .s_axis_qdma_h2c_tuser_dst        (s_axis_qdma_h2c_tuser_dst),
+  //.s_axis_qdma_h2c_tuser_src        (s_axis_qdma_h2c_tuser_src),
+  //.s_axis_qdma_h2c_tuser_dst        (s_axis_qdma_h2c_tuser_dst),
   .s_axis_qdma_h2c_tready           (s_axis_qdma_h2c_tready),
 
   .m_axis_qdma_c2h_tvalid           (m_axis_qdma_c2h_tvalid),
   .m_axis_qdma_c2h_tdata            (m_axis_qdma_c2h_tdata),
   .m_axis_qdma_c2h_tkeep            (m_axis_qdma_c2h_tkeep),
   .m_axis_qdma_c2h_tlast            (m_axis_qdma_c2h_tlast),
-  .m_axis_qdma_c2h_tuser_size       (m_axis_qdma_c2h_tuser_size),
-  .m_axis_qdma_c2h_tuser_src        (m_axis_qdma_c2h_tuser_src),
-  .m_axis_qdma_c2h_tuser_dst        (m_axis_qdma_c2h_tuser_dst),
+  //.m_axis_qdma_c2h_tuser_size       (m_axis_qdma_c2h_tuser_size),
+  //.m_axis_qdma_c2h_tuser_src        (m_axis_qdma_c2h_tuser_src),
+  //.m_axis_qdma_c2h_tuser_dst        (m_axis_qdma_c2h_tuser_dst),
   .m_axis_qdma_c2h_tready           (m_axis_qdma_c2h_tready),
 
   .m_axis_adap_tx_250mhz_tvalid     (m_axis_adap_tx_250mhz_tvalid),
   .m_axis_adap_tx_250mhz_tdata      (m_axis_adap_tx_250mhz_tdata),
   .m_axis_adap_tx_250mhz_tkeep      (m_axis_adap_tx_250mhz_tkeep),
   .m_axis_adap_tx_250mhz_tlast      (m_axis_adap_tx_250mhz_tlast),
-  .m_axis_adap_tx_250mhz_tuser_size (m_axis_adap_tx_250mhz_tuser_size),
-  .m_axis_adap_tx_250mhz_tuser_src  (m_axis_adap_tx_250mhz_tuser_src),
-  .m_axis_adap_tx_250mhz_tuser_dst  (m_axis_adap_tx_250mhz_tuser_dst),
+  //.m_axis_adap_tx_250mhz_tuser_size (m_axis_adap_tx_250mhz_tuser_size),
+  //.m_axis_adap_tx_250mhz_tuser_src  (m_axis_adap_tx_250mhz_tuser_src),
+  //.m_axis_adap_tx_250mhz_tuser_dst  (m_axis_adap_tx_250mhz_tuser_dst),
   .m_axis_adap_tx_250mhz_tready     (m_axis_adap_tx_250mhz_tready),
 
   .s_axis_adap_rx_250mhz_tvalid     (s_axis_adap_rx_250mhz_tvalid),
@@ -83,8 +121,8 @@ p2p_250mhz #(
   .s_axis_adap_rx_250mhz_tkeep      (s_axis_adap_rx_250mhz_tkeep),
   .s_axis_adap_rx_250mhz_tlast      (s_axis_adap_rx_250mhz_tlast),
   .s_axis_adap_rx_250mhz_tuser_size (s_axis_adap_rx_250mhz_tuser_size),
-  .s_axis_adap_rx_250mhz_tuser_src  (s_axis_adap_rx_250mhz_tuser_src),
-  .s_axis_adap_rx_250mhz_tuser_dst  (s_axis_adap_rx_250mhz_tuser_dst),
+  //.s_axis_adap_rx_250mhz_tuser_src  (s_axis_adap_rx_250mhz_tuser_src),
+  //.s_axis_adap_rx_250mhz_tuser_dst  (s_axis_adap_rx_250mhz_tuser_dst),
   .s_axis_adap_rx_250mhz_tready     (s_axis_adap_rx_250mhz_tready),
 
   .mod_rstn                         (mod_rstn[0]),

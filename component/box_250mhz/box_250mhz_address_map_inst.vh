@@ -15,6 +15,8 @@
 // limitations under the License.
 //
 // *************************************************************************
+
+//output to vitis ip 1-ingress classifier
 wire        axil_p2p_awvalid;
 wire [31:0] axil_p2p_awaddr;
 wire        axil_p2p_awready;
@@ -32,6 +34,44 @@ wire [31:0] axil_p2p_rdata;
 wire  [1:0] axil_p2p_rresp;
 wire        axil_p2p_rready;
 
+// output to vitis ip 2-ingress translator
+wire        axil_new_awvalid;
+wire [31:0] axil_new_awaddr;
+wire        axil_new_awready;
+wire        axil_new_wvalid;
+wire [31:0] axil_new_wdata;
+wire        axil_new_wready;
+wire        axil_new_bvalid;
+wire  [1:0] axil_new_bresp;
+wire        axil_new_bready;
+wire        axil_new_arvalid;
+wire [31:0] axil_new_araddr;
+wire        axil_new_arready;
+wire        axil_new_rvalid;
+wire [31:0] axil_new_rdata;
+wire  [1:0] axil_new_rresp;
+wire        axil_new_rready;
+
+
+// output to vitis ip 3- egress translator
+wire        axil_egress_awvalid;
+wire [31:0] axil_egress_awaddr;
+wire        axil_egress_awready;
+wire        axil_egress_wvalid;
+wire [31:0] axil_egress_wdata;
+wire        axil_egress_wready;
+wire        axil_egress_bvalid;
+wire  [1:0] axil_egress_bresp;
+wire        axil_egress_bready;
+wire        axil_egress_arvalid;
+wire [31:0] axil_egress_araddr;
+wire        axil_egress_arready;
+wire        axil_egress_rvalid;
+wire [31:0] axil_egress_rdata;
+wire  [1:0] axil_egress_rresp;
+wire        axil_egress_rready;
+
+//output to dummy
 wire        axil_dummy_awvalid;
 wire [31:0] axil_dummy_awaddr;
 wire        axil_dummy_awready;
@@ -50,6 +90,8 @@ wire  [1:0] axil_dummy_rresp;
 wire        axil_dummy_rready;
 
 box_250mhz_address_map address_map_inst (
+
+  //input to crossbar
   .s_axil_awvalid       (s_axil_awvalid),
   .s_axil_awaddr        (s_axil_awaddr),
   .s_axil_awready       (s_axil_awready),
@@ -67,6 +109,7 @@ box_250mhz_address_map address_map_inst (
   .s_axil_rresp         (s_axil_rresp),
   .s_axil_rready        (s_axil_rready),
 
+   //output to vitis ip 1 - Ingress classifier
   .m_axil_p2p_awvalid   (axil_p2p_awvalid),
   .m_axil_p2p_awaddr    (axil_p2p_awaddr),
   .m_axil_p2p_awready   (axil_p2p_awready),
@@ -84,6 +127,45 @@ box_250mhz_address_map address_map_inst (
   .m_axil_p2p_rresp     (axil_p2p_rresp),
   .m_axil_p2p_rready    (axil_p2p_rready),
 
+  //output to vitis ip 2- Ingress Translator
+  .m_axil_new_awvalid   (axil_new_awvalid),
+  .m_axil_new_awaddr    (axil_new_awaddr),
+  .m_axil_new_awready   (axil_new_awready),
+  .m_axil_new_wvalid    (axil_new_wvalid),
+  .m_axil_new_wdata     (axil_new_wdata),
+  .m_axil_new_wready    (axil_new_wready),
+  .m_axil_new_bvalid    (axil_new_bvalid),
+  .m_axil_new_bresp     (axil_new_bresp),
+  .m_axil_new_bready    (axil_new_bready),
+  .m_axil_new_arvalid   (axil_new_arvalid),
+  .m_axil_new_araddr    (axil_new_araddr),
+  .m_axil_new_arready   (axil_new_arready),
+  .m_axil_new_rvalid    (axil_new_rvalid),
+  .m_axil_new_rdata     (axil_new_rdata),
+  .m_axil_new_rresp     (axil_new_rresp),
+  .m_axil_new_rready    (axil_new_rready),
+
+
+  //output to vitis ip 3 - egress Translator
+  .m_axil_egress_awvalid   (axil_egress_awvalid),
+  .m_axil_egress_awaddr    (axil_egress_awaddr),
+  .m_axil_egress_awready   (axil_egress_awready),
+  .m_axil_egress_wvalid    (axil_egress_wvalid),
+  .m_axil_egress_wdata     (axil_egress_wdata),
+  .m_axil_egress_wready    (axil_egress_wready),
+  .m_axil_egress_bvalid    (axil_egress_bvalid),
+  .m_axil_egress_bresp     (axil_egress_bresp),
+  .m_axil_egress_bready    (axil_egress_bready),
+  .m_axil_egress_arvalid   (axil_egress_arvalid),
+  .m_axil_egress_araddr    (axil_egress_araddr),
+  .m_axil_egress_arready   (axil_egress_arready),
+  .m_axil_egress_rvalid    (axil_egress_rvalid),
+  .m_axil_egress_rdata     (axil_egress_rdata),
+  .m_axil_egress_rresp     (axil_egress_rresp),
+  .m_axil_egress_rready    (axil_egress_rready),
+
+
+  //output to dummy
   .m_axil_dummy_awvalid (axil_dummy_awvalid),
   .m_axil_dummy_awaddr  (axil_dummy_awaddr),
   .m_axil_dummy_awready (axil_dummy_awready),
