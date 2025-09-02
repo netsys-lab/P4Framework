@@ -14,7 +14,7 @@ SYN_ARGS_LIST=impl synth_ip post_impl
 if_synth=1
 board=au55c
 build_timestamp=$(shell date +%y%m%d%H%M)
-num_cmac_port=1
+num_cmac_port=2
 num_phys_func=4
 
 # user_build_dir must be full path. Use build_dir to give the relative path
@@ -37,7 +37,7 @@ $(EXAMPLE_OBJ): CHECK_VIVADO_VER
 	$(eval TCL_ARGS += -compile_mode FastCompile)
 
 	# Enable multi-threaded synthesis (adjust '4' to the number of CPU cores you want to use)
-	$(eval TCL_ARGS += -jobs 16)
+	$(eval TCL_ARGS += -jobs 8)
 
 	#build
 	@[ -d '$(user_build_dir)' ] || mkdir $(user_build_dir)
@@ -74,7 +74,7 @@ CHECK_VIVADO_VER:
 ifeq ($(VIVADO_VER), $(VIVADO_TARGET_VER))
 	@echo "Current Vivado Verion is $(VIVADO_VER)"
 else
-	@echo "This Makefile requires VIVADO_VER as 2021.2"
+	@echo "This Makefile requires VIVADO_VER as 2023.1"
 	@echo "Please make sure your have source your VIVADO_ROOT/settings64.sh"
 	exit 1;
 endif
