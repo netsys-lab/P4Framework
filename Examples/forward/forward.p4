@@ -31,11 +31,11 @@
 
 /*
  * Forward Switch:
- * 
+ *
  * The forward design exemplifies the implementation the core of an IPv4/IPv6
- * network switch. IP destination address is used to perform an LPM search to 
- * determine the port where the packet needs to be redirected to. The IPv6 
- * table is setup to be implemented with an ternary CAM and the IPv4 table 
+ * network switch. IP destination address is used to perform an LPM search to
+ * determine the port where the packet needs to be redirected to. The IPv6
+ * table is setup to be implemented with an ternary CAM and the IPv4 table
  * with a semi-ternary CAM.
  *
  */
@@ -43,6 +43,11 @@
 typedef bit<48>  MacAddr;
 typedef bit<32>  IPv4Addr;
 typedef bit<128> IPv6Addr;
+
+typedef enum bit<8> {
+    PACKETS,
+    BYTES
+} CounterType_t;
 
 const bit<16> VLAN_TYPE  = 0x8100;
 const bit<16> IPV4_TYPE  = 0x0800;
@@ -146,7 +151,7 @@ struct metadata {
 	bit<16> tuser_dst;
 }
 
-// User-defined errors 
+// User-defined errors
 error {
     InvalidIPpacket,
     InvalidTCPpacket
@@ -156,35 +161,35 @@ error {
 // *************************** P A R S E R  ************************************* //
 // ****************************************************************************** //
 
-parser MyParser(packet_in packet, 
-                out headers hdr, 
-                inout metadata meta, 
+parser MyParser(packet_in packet,
+                out headers hdr,
+                inout metadata meta,
                 inout standard_metadata_t smeta) {
-    
+
     state start {
         transition parse_eth;
     }
-    
+
     state parse_eth {
         packet.extract(hdr.eth);
         transition select(hdr.eth.type) {
             VLAN_TYPE : parse_vlan;
             IPV4_TYPE : parse_ipv4;
             IPV6_TYPE : parse_ipv6;
-            default   : accept; 
+            default   : accept;
         }
     }
-    
+
     state parse_vlan {
         packet.extract(hdr.vlan.next);
         transition select(hdr.vlan.last.tpid) {
             VLAN_TYPE : parse_vlan;
             IPV4_TYPE : parse_ipv4;
             IPV6_TYPE : parse_ipv6;
-            default   : accept; 
+            default   : accept;
         }
     }
-    
+
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
         verify(hdr.ipv4.version == 4 && hdr.ipv4.hdr_len >= 5, error.InvalidIPpacket);
@@ -192,18 +197,18 @@ parser MyParser(packet_in packet,
         transition select(hdr.ipv4.protocol) {
             TCP_PROT  : parse_tcp;
             UDP_PROT  : parse_udp;
-            default   : accept; 
+            default   : accept;
         }
     }
-    
+
     state parse_ipv6 {
         packet.extract(hdr.ipv6);
         verify(hdr.ipv6.version == 6, error.InvalidIPpacket);
         transition select(hdr.ipv6.protocol) {
             TCP_PROT  : parse_tcp;
             UDP_PROT  : parse_udp;
-            default   : accept; 
-        } 
+            default   : accept;
+        }
     }
 
     state parse_tcp {
@@ -212,7 +217,7 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.tcpopt, (((bit<32>)hdr.tcp.dataOffset - 5) * 32));
         transition accept;
     }
-    
+
     state parse_udp {
         packet.extract(hdr.udp);
         transition accept;
@@ -223,24 +228,37 @@ parser MyParser(packet_in packet,
 // **************************  P R O C E S S I N G   **************************** //
 // ****************************************************************************** //
 
-control MyProcessing(inout headers hdr, 
-                     inout metadata meta, 
+control MyProcessing(inout headers hdr,
+                     inout metadata meta,
                      inout standard_metadata_t smeta) {
-                      
+
    // action forwardPacket(bit<9> port) {
    //     meta.port = port;
    // }
 
+    //counter for forwarded packets
+
+Counter<bit<16>, bit<16>>(1024, CounterType_t.PACKETS) forward_counter;
+Counter<bit<16>, bit<16>>(1024, CounterType_t.PACKETS) drop_counter;
+
+
+
     action forwardPacket() {
+        // Increment counter when forwarding
+        //forward_counter.count(0);
+        forward_counter.count((bit<16>)smeta.ingress_port);
     }
-    
+
     action dropPacket() {
 		smeta.drop = 1;
+//         // Increment drop counter
+        //drop_counter.count(0);
+        drop_counter.count((bit<16>)smeta.ingress_port);
     }
 
     table forwardIPv4 {
         key             = { hdr.ipv4.dst : lpm; }
-        actions         = { forwardPacket; 
+        actions         = { forwardPacket;
                             dropPacket; }
         size            = 1024;
 		num_masks       = 64;
@@ -249,36 +267,38 @@ control MyProcessing(inout headers hdr,
 
     table forwardIPv6 {
         key             = { hdr.ipv6.dst : lpm; }
-        actions         = { forwardPacket; 
+        actions         = { forwardPacket;
                             dropPacket; }
         size            = 1024;
         default_action  = forwardPacket;
     }
 
     apply {
-        
+
         if (smeta.parser_error != error.NoError) {
             dropPacket();
             return;
         }
-        
-        if (hdr.ipv4.isValid())
+
+         if (hdr.ipv4.isValid())
             forwardIPv4.apply();
         else if (hdr.ipv6.isValid())
             forwardIPv6.apply();
         else
 			forwardPacket();
-        
+
+
+
     }
-} 
+}
 
 // ****************************************************************************** //
 // ***************************  D E P A R S E R  ******************************** //
 // ****************************************************************************** //
 
-control MyDeparser(packet_out packet, 
+control MyDeparser(packet_out packet,
                    in headers hdr,
-                   inout metadata meta, 
+                   inout metadata meta,
                    inout standard_metadata_t smeta) {
     apply {
         packet.emit(hdr.eth);
@@ -297,7 +317,7 @@ control MyDeparser(packet_out packet,
 // ****************************************************************************** //
 
 XilinxPipeline(
-    MyParser(), 
-    MyProcessing(), 
+    MyParser(),
+    MyProcessing(),
     MyDeparser()
 ) main;

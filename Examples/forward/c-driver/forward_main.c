@@ -83,6 +83,9 @@
 /****************************************************************************************************************************************************/
 static void DisplayVitisNetP4Versions(XilVitisNetP4TargetCtx *CtxPtr);
 
+
+static void DisplayCounterStats(XilVitisNetP4CounterCtx *CounterCtx, const char *CounterName);  //counter function declarations
+
 XilVitisNetP4ReturnType XilVitisNetP4WordLogStub(XilVitisNetP4EnvIf *EnvIfPtr, const char *MessagePtr);
 
 XilVitisNetP4ReturnType example_log_info(XilVitisNetP4EnvIf *EnvIfPtr, const char *MessagePtr);
@@ -109,7 +112,13 @@ XilVitisNetP4ReturnType env_read(XilVitisNetP4EnvIf *EnvIfPtr, XilVitisNetP4Addr
 /* SECTION: Global variables */
 /****************************************************************************************************************************************************/
 
-char sysfile_path[] = "/sys/devices/pci0000:3a/0000:3a:00.0/0000:3b:00.0/resource2";
+char sysfile_path[] = "/sys/devices/pci0000:b2/0000:b2:00.0/0000:b3:00.0/resource2";
+
+//counter contexts
+XilVitisNetP4CounterCtx ForwardCounterCtx;
+
+XilVitisNetP4CounterCtx DropCounterCtx;
+
 
 typedef struct ExampleUserContext
 {
@@ -119,14 +128,14 @@ typedef struct ExampleUserContext
 /* Key and Responses based on the five Tuple, using Big Endian array */
 
 uint8_t ForwardKeyArray[EXAMPLE_NUM_TABLE_ENTRIES][4] = {
-    // Entry 1 : ForwardPkt 
-    // key :[ ipv4.dst=9aaa2010 ] 
+    // Entry 1 : ForwardPkt
+    // key :[ ipv4.dst=9aaa2010 ]
     {0x9a, 0xaa, 0x20, 0x10},
     //Entry 2 : ForwardPkt
-    // key :[ ipv4.dst=cc930a03 ] 
+    // key :[ ipv4.dst=cc930a03 ]
     {0xcc, 0x93, 0x0a, 0x03},
     // Entry 3 : ForwardPkt
-    // key :[ ipv4.dst=6353a5ca ] 
+    // key :[ ipv4.dst=6353a5ca ]
     {0x63, 0x53, 0xa5, 0xca},
     // Entry 4 : ForwardPkt
     // key :[ ipv4.dst=cc3d03d7 ]
@@ -135,13 +144,13 @@ uint8_t ForwardKeyArray[EXAMPLE_NUM_TABLE_ENTRIES][4] = {
 
 uint8_t ForwardMasksArray[EXAMPLE_NUM_TABLE_ENTRIES][4] = {
     // Entry 1 : ForwardPkt
-    // key :[ ipv4.dst=9aaa2010 ] 
+    // key :[ ipv4.dst=9aaa2010 ]
     {0xff, 0xff, 0xff, 0xff},
     //Entry 2 : ForwardPkt
-    // key :[ ipv4.dst=cc930a03 ] 
+    // key :[ ipv4.dst=cc930a03 ]
     {0xff, 0xff, 0xff, 0xff},
     // Entry 3 : ForwardPkt
-    // key :[ ipv4.dst=6353a5ca ] 
+    // key :[ ipv4.dst=6353a5ca ]
     {0xff, 0xff, 0xff, 0xff},
     // Entry 4 : ForwardPkt
     // key :[ ipv4.dst=cc3d03d7 ]
@@ -176,6 +185,72 @@ int sysfile;
 /* SECTION: Entry point */
 /****************************************************************************************************************************************************/
 
+//counter display function implementation
+/*
+static void DisplayCounterStats(XilVitisNetP4CounterCtx *CounterCtx, const char *CounterName) {
+
+    XilVitisNetP4ReturnType Result;
+
+    uint64_t PacketCount = 0;
+
+
+    Result = XilVitisNetP4CounterCollectRead(CounterCtx, 0, 1, &PacketCount);
+
+    if (Result == XIL_VITIS_NET_P4_SUCCESS) {
+
+        printf("%s Counter: %lu packets\n", CounterName, PacketCount);
+
+
+    } else {
+        printf("Failed to read %s counter: %s\n", CounterName, XilVitisNetP4ReturnTypeToString(Result));
+
+    }
+}
+
+*/
+
+static void DisplayCounterStats(XilVitisNetP4CounterCtx *CounterCtx, const char *CounterName) {
+    XilVitisNetP4ReturnType Result;
+    uint64_t PacketCounts[1024];  // Buffer for all counters
+
+    // Read ALL counters (1024 as configured)
+    Result = XilVitisNetP4CounterCollectRead(CounterCtx, 0, 1024, PacketCounts);
+
+    if (Result == XIL_VITIS_NET_P4_SUCCESS) {
+        uint64_t total = 0;
+        for (int i = 0; i < 1024; i++) {
+            total += PacketCounts[i];
+        }
+        printf("%s Counter: %lu total packets\n", CounterName, total);
+    } else {
+        printf("Failed to read %s counter: %s\n", CounterName,
+               XilVitisNetP4ReturnTypeToString(Result));
+    }
+}
+
+
+//For non-zero counters
+void DumpAllCounters(XilVitisNetP4CounterCtx *CounterCtx, const char *CounterName) {
+
+    uint64_t values[1024];
+
+    XilVitisNetP4ReturnType Result = XilVitisNetP4CounterCollectRead(CounterCtx, 0, 1024, values);
+
+    if (Result == XIL_VITIS_NET_P4_SUCCESS) {
+
+        printf("All %s Counters:\n", CounterName);
+
+        for (uint32_t i = 0; i < 1024; i++) {
+
+            if (values[i] > 0) {
+
+                printf("  Index %u: %lu packets\n", i, values[i]);
+
+            }
+        }
+    }
+}
+
 
 int main(void)
 {
@@ -188,6 +263,30 @@ int main(void)
     uint32_t ReadActionId;
     uint32_t ReadPriority;
     uint8_t Masks;
+
+    //counter configurations
+        XilVitisNetP4CounterConfig ForwardCounterConfig = {
+
+        .CounterType = XIL_VITIS_NET_P4_COUNTER_PACKETS,
+
+        .NumCounters = 1024,
+
+        .Width = 16
+
+    };
+
+
+
+    XilVitisNetP4CounterConfig DropCounterConfig = {
+
+        .CounterType = XIL_VITIS_NET_P4_COUNTER_PACKETS,
+
+        .NumCounters = 1024,
+
+        .Width = 16
+
+    };
+
 
     ExampleUserContext *UserCtxPtr;
     XilVitisNetP4TableCtx *ForwardTableCtxPtr;
@@ -242,8 +341,52 @@ int main(void)
         goto exit_example;
     }
 
+    //initialize counters
+        printf("Initializing counters...\n\r");
+        sleep(2); // Wait 2 seconds for hardware to stabilize
+
+
+    Result = XilVitisNetP4CounterInit(&ForwardCounterCtx, EnvIfPtr, &ForwardCounterConfig);
+
+    if (Result != XIL_VITIS_NET_P4_SUCCESS) {
+
+        printf("Failed to initialize forward counter: %s\n", XilVitisNetP4ReturnTypeToString(Result));
+
+    }
+
+
+
+    Result = XilVitisNetP4CounterInit(&DropCounterCtx, EnvIfPtr, &DropCounterConfig);
+
+    if (Result != XIL_VITIS_NET_P4_SUCCESS) {
+
+        printf("Failed to initialize drop counter: %s\n", XilVitisNetP4ReturnTypeToString(Result));
+
+    }
+
+
+
+    // Reset counters
+
+    XilVitisNetP4CounterReset(&ForwardCounterCtx);
+
+    XilVitisNetP4CounterReset(&DropCounterCtx);
+
+
+//printf("Counter initialization skipped for testing\n");
+
     printf("Get Table Handle\n\r");
     Result = XilVitisNetP4TargetGetTableByName(ForwardTargetCtxPtr, "forwardIPv4", &ForwardTableCtxPtr);
+    if (Result != XIL_VITIS_NET_P4_SUCCESS)
+    {
+        DISPLAY_ERROR(Result);
+        goto target_exit;
+    }
+
+    //TPv6 table handling
+    printf("Get IPv6 Table Handle\n\r");
+    XilVitisNetP4TableCtx *ForwardIPv6TableCtxPtr;
+    Result = XilVitisNetP4TargetGetTableByName(ForwardTargetCtxPtr, "forwardIPv6", &ForwardIPv6TableCtxPtr);
     if (Result != XIL_VITIS_NET_P4_SUCCESS)
     {
         DISPLAY_ERROR(Result);
@@ -269,14 +412,14 @@ int main(void)
 
     printf("\nInsert Tables.....");
     for (Index = 0; Index < EXAMPLE_NUM_TABLE_ENTRIES; Index++)
-    // Insert Table 
+    // Insert Table
     {
         printf("Insert table entry %d\n\r", Index);
 
         Result = XilVitisNetP4TableInsert(ForwardTableCtxPtr,
                                      ForwardKeyArray[Index],
-                                     ForwardMasksArray[Index], 
-                                     0x0, 
+                                     ForwardMasksArray[Index],
+                                     0x0,
                                      ActionId,
                                      ForwardActionParamsArray[Index]);
         if (Result != XIL_VITIS_NET_P4_SUCCESS)
@@ -289,11 +432,11 @@ int main(void)
 //
     printf("\nTable Querying... \n\r");
     for (Index = 0; Index < EXAMPLE_NUM_TABLE_ENTRIES; Index++)
-    {   
+    {
         Result = XilVitisNetP4TableGetByKey(ForwardTableCtxPtr,
                                        ForwardKeyArray[Index],
-                                       ForwardMasksArray[Index], 
-                                       &ReadPriority, 
+                                       ForwardMasksArray[Index],
+                                       &ReadPriority,
                                        &ReadActionId,
                                        ReadParamActionsBuffer);
 
@@ -311,13 +454,13 @@ int main(void)
         }
     }
         //sleep(1);
-    
+
     printf("\n Updating Tables...\n\r");
     for (Index = 0; Index < EXAMPLE_NUM_TABLE_ENTRIES; Index++){
         printf("Updating the Response for table entry %d\n\r", Index);
         Result = XilVitisNetP4TableUpdate(ForwardTableCtxPtr,
                                      ForwardKeyArray[Index],
-                                     ForwardMasksArray[Index], 
+                                     ForwardMasksArray[Index],
                                      ActionId,
                                      ReadParamActionsBuffer);
 
@@ -341,7 +484,7 @@ int main(void)
             Result = XilVitisNetP4TableGetByKey(ForwardTableCtxPtr,
                                            ForwardKeyArray[Index],
                                            ForwardMasksArray[Index],
-                                           &ReadPriority, 
+                                           &ReadPriority,
                                            &ReadActionId,
                                            ReadParamActionsBuffer);
             if (Result != XIL_VITIS_NET_P4_CAM_ERR_KEY_NOT_FOUND)
@@ -360,6 +503,19 @@ int main(void)
         }
     }
 //  */
+
+    // Display counter statistics periodically
+    for (int i = 0; i < 5; i++) {
+
+        printf("\nCounter Statistics (iteration %d):\n", i+1);
+
+        DisplayCounterStats(&ForwardCounterCtx, "Forward");
+
+        DisplayCounterStats(&DropCounterCtx, "Drop");
+
+        sleep(1);
+    }
+
 
 target_exit:
     printf ("target_exit: \n");
@@ -485,6 +641,7 @@ XilVitisNetP4ReturnType env_write(XilVitisNetP4EnvIf *EnvIfPtr, XilVitisNetP4Add
     void *region;
     void *virtual;
     off_t addr = (off_t)UserCtxPtr->VitisNetP4Address + Address;
+    printf ("write address %lu \n " ,addr);
     off_t offset = addr & (-4096);
     off_t rem = addr & 0xFFF;
     size_t length = 4096;
@@ -498,7 +655,7 @@ XilVitisNetP4ReturnType env_write(XilVitisNetP4EnvIf *EnvIfPtr, XilVitisNetP4Add
     }
     virtual = region + rem;
     *((uint32_t *)virtual) = WriteValue;
-    
+
     if(munmap(region, length) < 0)
     {
         fprintf(stderr, "Error calling munmap: %s\n", strerror(errno));
@@ -528,6 +685,7 @@ XilVitisNetP4ReturnType env_read(XilVitisNetP4EnvIf *EnvIfPtr, XilVitisNetP4Addr
     void *region;
     void *virtual;
     off_t addr = (off_t)UserCtxPtr->VitisNetP4Address + Address;
+    printf ("read address %lu \n " ,addr);
     off_t offset = addr & (-4096);
     off_t rem = addr & 0xFFF;
     size_t length = 4096;
