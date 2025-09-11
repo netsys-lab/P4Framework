@@ -72,22 +72,22 @@ wire  [1:0] axil_egress_rresp;
 wire        axil_egress_rready;
 
 //output to dummy
-wire        axil_dummy_awvalid;
-wire [31:0] axil_dummy_awaddr;
-wire        axil_dummy_awready;
-wire        axil_dummy_wvalid;
-wire [31:0] axil_dummy_wdata;
-wire        axil_dummy_wready;
-wire        axil_dummy_bvalid;
-wire  [1:0] axil_dummy_bresp;
-wire        axil_dummy_bready;
-wire        axil_dummy_arvalid;
-wire [31:0] axil_dummy_araddr;
-wire        axil_dummy_arready;
-wire        axil_dummy_rvalid;
-wire [31:0] axil_dummy_rdata;
-wire  [1:0] axil_dummy_rresp;
-wire        axil_dummy_rready;
+//wire        axil_dummy_awvalid;
+//wire [31:0] axil_dummy_awaddr;
+//wire        axil_dummy_awready;
+//wire        axil_dummy_wvalid;
+//wire [31:0] axil_dummy_wdata;
+//wire        axil_dummy_wready;
+//wire        axil_dummy_bvalid;
+//wire  [1:0] axil_dummy_bresp;
+//wire        axil_dummy_bready;
+//wire        axil_dummy_arvalid;
+//wire [31:0] axil_dummy_araddr;
+//wire        axil_dummy_arready;
+//wire        axil_dummy_rvalid;
+//wire [31:0] axil_dummy_rdata;
+//wire  [1:0] axil_dummy_rresp;
+//wire        axil_dummy_rready;
 
 box_250mhz_address_map address_map_inst (
 
@@ -166,28 +166,29 @@ box_250mhz_address_map address_map_inst (
 
 
   //output to dummy
-  .m_axil_dummy_awvalid (axil_dummy_awvalid),
-  .m_axil_dummy_awaddr  (axil_dummy_awaddr),
-  .m_axil_dummy_awready (axil_dummy_awready),
-  .m_axil_dummy_wvalid  (axil_dummy_wvalid),
-  .m_axil_dummy_wdata   (axil_dummy_wdata),
-  .m_axil_dummy_wready  (axil_dummy_wready),
-  .m_axil_dummy_bvalid  (axil_dummy_bvalid),
-  .m_axil_dummy_bresp   (axil_dummy_bresp),
-  .m_axil_dummy_bready  (axil_dummy_bready),
-  .m_axil_dummy_arvalid (axil_dummy_arvalid),
-  .m_axil_dummy_araddr  (axil_dummy_araddr),
-  .m_axil_dummy_arready (axil_dummy_arready),
-  .m_axil_dummy_rvalid  (axil_dummy_rvalid),
-  .m_axil_dummy_rdata   (axil_dummy_rdata),
-  .m_axil_dummy_rresp   (axil_dummy_rresp),
-  .m_axil_dummy_rready  (axil_dummy_rready),
+  //.m_axil_dummy_awvalid (axil_dummy_awvalid),
+  //.m_axil_dummy_awaddr  (axil_dummy_awaddr),
+  //.m_axil_dummy_awready (axil_dummy_awready),
+  //.m_axil_dummy_wvalid  (axil_dummy_wvalid),
+  //.m_axil_dummy_wdata   (axil_dummy_wdata),
+  //.m_axil_dummy_wready  (axil_dummy_wready),
+  //.m_axil_dummy_bvalid  (axil_dummy_bvalid),
+  //.m_axil_dummy_bresp   (axil_dummy_bresp),
+  //.m_axil_dummy_bready  (axil_dummy_bready),
+  //.m_axil_dummy_arvalid (axil_dummy_arvalid),
+  //.m_axil_dummy_araddr  (axil_dummy_araddr),
+  //.m_axil_dummy_arready (axil_dummy_arready),
+  //.m_axil_dummy_rvalid  (axil_dummy_rvalid),
+  //.m_axil_dummy_rdata   (axil_dummy_rdata),
+  //.m_axil_dummy_rresp   (axil_dummy_rresp),
+  //.m_axil_dummy_rready  (axil_dummy_rready),
 
   .aclk                 (axil_aclk),
   .aresetn              (internal_box_rstn)
 );
 
 // Sink for the unused dummy register interface
+/*
 axi_lite_slave #(
   .REG_ADDR_W (12),
   .REG_PREFIX (16'hD000)
@@ -213,3 +214,4 @@ axi_lite_slave #(
   .aclk           (axil_aclk)
 );
 
+*/

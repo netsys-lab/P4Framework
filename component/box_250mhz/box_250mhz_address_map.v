@@ -28,11 +28,11 @@
 // --------------------------------------------------
 //   0x2000   |  0x2FFF   |  Port-to-port egress translator
 // --------------------------------------------------
-//   0x3000   |  0x3FFF   |  Dummy
+//   0x3000   |  0x3FFF   |  Dummy--removed
 // --------------------------------------------------
 `timescale 1ns/1ps
 module box_250mhz_address_map #(
-   parameter C_DUMMY_BASE_ADDR = 32'h3000  //dummy base address
+   //parameter C_DUMMY_BASE_ADDR = 32'h3000  //dummy base address
 ) (
 
 //input from system config
@@ -108,34 +108,34 @@ module box_250mhz_address_map #(
   output        m_axil_egress_rready,
 
   //output to dummy
-  output        m_axil_dummy_awvalid,
-  output [31:0] m_axil_dummy_awaddr,
-  input         m_axil_dummy_awready,
-  output        m_axil_dummy_wvalid,
-  output [31:0] m_axil_dummy_wdata,
-  input         m_axil_dummy_wready,
-  input         m_axil_dummy_bvalid,
-  input   [1:0] m_axil_dummy_bresp,
-  output        m_axil_dummy_bready,
-  output        m_axil_dummy_arvalid,
-  output [31:0] m_axil_dummy_araddr,
-  input         m_axil_dummy_arready,
-  input         m_axil_dummy_rvalid,
-  input  [31:0] m_axil_dummy_rdata,
-  input   [1:0] m_axil_dummy_rresp,
-  output        m_axil_dummy_rready,
+  //output        m_axil_dummy_awvalid,
+  //output [31:0] m_axil_dummy_awaddr,
+  //input         m_axil_dummy_awready,
+  //output        m_axil_dummy_wvalid,
+  //output [31:0] m_axil_dummy_wdata,
+  //input         m_axil_dummy_wready,
+  //input         m_axil_dummy_bvalid,
+  //input   [1:0] m_axil_dummy_bresp,
+  //output        m_axil_dummy_bready,
+  //output        m_axil_dummy_arvalid,
+  //output [31:0] m_axil_dummy_araddr,
+  //input         m_axil_dummy_arready,
+  //input         m_axil_dummy_rvalid,
+  //input  [31:0] m_axil_dummy_rdata,
+  //input   [1:0] m_axil_dummy_rresp,
+  //output        m_axil_dummy_rready,
 
   input         aclk,
   input         aresetn
 );
 
   // Parameters for address map and slaves
-  localparam C_NUM_SLAVES  = 4;  //  number of slaves
+  localparam C_NUM_SLAVES  = 3;  //  number of slaves
 
   localparam C_P2P_INDEX   = 0;  //ingress Classifier
-  localparam C_DUMMY_INDEX = 1;   // Dummy
-  localparam C_NEW_INDEX   = 2;  // ingress translator
-  localparam C_EGRESS_INDEX   = 3;  // egress translator
+  //localparam C_DUMMY_INDEX = 1;   // Dummy
+  localparam C_NEW_INDEX   = 1;  // ingress translator
+  localparam C_EGRESS_INDEX   = 2;  // egress translator
 
   localparam C_P2P_BASE_ADDR = 32'h0000;  //ingress Classifier
   localparam C_NEW_BASE_ADDR   = 32'h1000; // ingress translator
@@ -147,8 +147,8 @@ module box_250mhz_address_map #(
   wire                  [31:0] axil_new_araddr;
   wire                  [31:0] axil_egress_awaddr;
   wire                  [31:0] axil_egress_araddr;
-  wire                  [31:0] axil_dummy_awaddr;
-  wire                  [31:0] axil_dummy_araddr;
+  //wire                  [31:0] axil_dummy_awaddr;
+  //wire                  [31:0] axil_dummy_araddr;
 
 
 
@@ -176,8 +176,8 @@ module box_250mhz_address_map #(
   assign axil_new_araddr                       = axil_araddr[C_NEW_INDEX*32 +: 32] - C_NEW_BASE_ADDR;
   assign axil_egress_awaddr                    = axil_awaddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
   assign axil_egress_araddr                    = axil_araddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
-  assign axil_dummy_awaddr                     = axil_awaddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
-  assign axil_dummy_araddr                     = axil_araddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
+  //assign axil_dummy_awaddr                     = axil_awaddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
+  //assign axil_dummy_araddr                     = axil_araddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
 
   //ingress classifier
   assign m_axil_p2p_awvalid                 = axil_awvalid[C_P2P_INDEX];
@@ -234,22 +234,22 @@ module box_250mhz_address_map #(
   assign m_axil_egress_rready                  = axil_rready[C_EGRESS_INDEX];
 
   //dummy
-  assign m_axil_dummy_awvalid               = axil_awvalid[C_DUMMY_INDEX];
-  assign m_axil_dummy_awaddr                = axil_dummy_awaddr;
-  assign axil_awready[C_DUMMY_INDEX]        = m_axil_dummy_awready;
-  assign m_axil_dummy_wvalid                = axil_wvalid[C_DUMMY_INDEX];
-  assign m_axil_dummy_wdata                 = axil_wdata[C_DUMMY_INDEX*32 +: 32];
-  assign axil_wready[C_DUMMY_INDEX]         = m_axil_dummy_wready;
-  assign axil_bvalid[C_DUMMY_INDEX]         = m_axil_dummy_bvalid;
-  assign axil_bresp[C_DUMMY_INDEX*2 +: 2]   = m_axil_dummy_bresp;
-  assign m_axil_dummy_bready                = axil_bready[C_DUMMY_INDEX];
-  assign m_axil_dummy_arvalid               = axil_arvalid[C_DUMMY_INDEX];
-  assign m_axil_dummy_araddr                = axil_dummy_araddr;
-  assign axil_arready[C_DUMMY_INDEX]        = m_axil_dummy_arready;
-  assign axil_rvalid[C_DUMMY_INDEX]         = m_axil_dummy_rvalid;
-  assign axil_rdata[C_DUMMY_INDEX*32 +: 32] = m_axil_dummy_rdata;
-  assign axil_rresp[C_DUMMY_INDEX* 2 +: 2]  = m_axil_dummy_rresp;
-  assign m_axil_dummy_rready                = axil_rready[C_DUMMY_INDEX];
+  //assign m_axil_dummy_awvalid               = axil_awvalid[C_DUMMY_INDEX];
+  //assign m_axil_dummy_awaddr                = axil_dummy_awaddr;
+  //assign axil_awready[C_DUMMY_INDEX]        = m_axil_dummy_awready;
+  //assign m_axil_dummy_wvalid                = axil_wvalid[C_DUMMY_INDEX];
+  //assign m_axil_dummy_wdata                 = axil_wdata[C_DUMMY_INDEX*32 +: 32];
+  //assign axil_wready[C_DUMMY_INDEX]         = m_axil_dummy_wready;
+  //assign axil_bvalid[C_DUMMY_INDEX]         = m_axil_dummy_bvalid;
+  //assign axil_bresp[C_DUMMY_INDEX*2 +: 2]   = m_axil_dummy_bresp;
+  //assign m_axil_dummy_bready                = axil_bready[C_DUMMY_INDEX];
+  //assign m_axil_dummy_arvalid               = axil_arvalid[C_DUMMY_INDEX];
+  //assign m_axil_dummy_araddr                = axil_dummy_araddr;
+  //assign axil_arready[C_DUMMY_INDEX]        = m_axil_dummy_arready;
+  //assign axil_rvalid[C_DUMMY_INDEX]         = m_axil_dummy_rvalid;
+  //assign axil_rdata[C_DUMMY_INDEX*32 +: 32] = m_axil_dummy_rdata;
+  //assign axil_rresp[C_DUMMY_INDEX* 2 +: 2]  = m_axil_dummy_rresp;
+  //assign m_axil_dummy_rready                = axil_rready[C_DUMMY_INDEX];
 
 
 
