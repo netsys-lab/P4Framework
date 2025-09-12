@@ -20,16 +20,16 @@ int parse_args(int argc, char* argv[]);
 void enable_port0(struct Device* dev);
 void print_counters(struct P4Target* target);
 
-#define TARGET_COUNT 4
+#define TARGET_COUNT 3
 #define TARGET_IG_CLASSIFIER 0
 #define TARGET_IG_TRANSLATOR 1
 #define TARGET_EG_TRANSLATOR 2
-#define TARGET_EG_CHECKSUM 3
+// #define TARGET_EG_CHECKSUM 3
 
-const XilVitisNetP4AddressType BASE_ADDR_IG_CLASSIFIER = 0x0000;
-const XilVitisNetP4AddressType BASE_ADDR_IG_TRANSLATOR = 0x1000;
-const XilVitisNetP4AddressType BASE_ADDR_EG_TRANSLATOR = 0x2000;
-const XilVitisNetP4AddressType BASE_ADDR_EG_CHECKSUM   = 0x3000;
+const XilVitisNetP4AddressType BASE_ADDR_IG_CLASSIFIER = 0x100000;
+const XilVitisNetP4AddressType BASE_ADDR_IG_TRANSLATOR = 0x200000;
+const XilVitisNetP4AddressType BASE_ADDR_EG_TRANSLATOR = 0x300000;
+// const XilVitisNetP4AddressType BASE_ADDR_EG_CHECKSUM   = 0x300000;
 
 char* SYSFILE_PATH = "/sys/devices/pci0000:b2/0000:b2:00.0/0000:b3:00.0/resource2";
 
@@ -62,7 +62,6 @@ int main(int argc, char* argv[])
     printf("Enable CMAC port 0\n");
     enable_port0(&device);
 
-    /*
     printf("Initialize driver\n");
     printf("Ingress Classifier\n");
     result = init_target(&targets[TARGET_IG_CLASSIFIER], &device,
@@ -76,17 +75,16 @@ int main(int argc, char* argv[])
     result = init_target(&targets[TARGET_EG_TRANSLATOR], &device,
         BASE_ADDR_EG_TRANSLATOR, &XilVitisNetP4TargetConfig_vitis_net_p4_2);
     if (result) goto cleanup;
-    printf("Egress Checksum\n");
-    result = init_target(&targets[TARGET_EG_CHECKSUM], &device,
-        BASE_ADDR_EG_CHECKSUM, &XilVitisNetP4TargetConfig_vitis_net_p4_3);
-    if (result) goto cleanup;
+    // printf("Egress Checksum\n");
+    // result = init_target(&targets[TARGET_EG_CHECKSUM], &device,
+    //     BASE_ADDR_EG_CHECKSUM, &XilVitisNetP4TargetConfig_vitis_net_p4_3);
+    // if (result) goto cleanup;
 
     targets[TARGET_IG_CLASSIFIER].prog_name = "Ingress Classifier";
     targets[TARGET_IG_TRANSLATOR].prog_name = "Ingress Translator";
     targets[TARGET_EG_TRANSLATOR].prog_name = "Egress Translator";
-    targets[TARGET_EG_CHECKSUM].prog_name = "Egress Checksum";
+    // targets[TARGET_EG_CHECKSUM].prog_name = "Egress Checksum";
 
-    */
     bool run = true;
     static const char* delim = " ";
     while (run)
