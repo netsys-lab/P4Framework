@@ -2,6 +2,3 @@
 	path = open-nic-shell
 	url = git@github.com:netsys-lab/oct-open-nic-shell.git
 	branch = oct_dev
-[submodule "vitisnetp4-scion"]
-	path = vitisnetp4-scion
-	url = git@github.com:netsys-lab/vitisnetp4-scion.git
