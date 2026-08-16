@@ -2,6 +2,12 @@
 
 Combines open-nic-shell and vitisnetp4-scion into a SmartNIC design with SCION-IP translation offload.
 
+SCION-IP translation P4 code and tests are in vitisnetp4-scion/scitra
+
+Vivado wrappers are in Examples/vitisalveo_checksum and Examples/vitisalveo_ingress_egress
+
+Build with the Makefile form this repository. Requires Vivado 2023.1, change the target board in the Makefile if not using an Alveo U55C.
+
 This is a fork of https://github.com/OCT-FPGA/P4Framework see the original README below.
 
 # P4-OpenNIC Framework

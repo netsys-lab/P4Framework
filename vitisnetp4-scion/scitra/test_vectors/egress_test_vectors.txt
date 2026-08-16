@@ -1,0 +1,91 @@
+SCITRA-FPGA Egress Pipeline Test Vectors
+=========================================
+
+Test Vector 1: ARP Request
+--------------------------
+Description: An Ethernet ARP request that is forwarded without any processing.
+Setup: Table content does not affect the processing.
+
+### Input
+
+Packet:
+b"\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x01\x08\x06\x00\x01\x08\x00\x06\x04\x00\x01\x08\x00'\xa0\x06\x90\n\x00\x02\x0f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+0000  FF FF FF FF FF FF 00 00 00 00 00 01 08 06 00 01  ................
+0010  08 00 06 04 00 01 08 00 27 A0 06 90 0A 00 02 0F  ........'.......
+0020  00 00 00 00 00 00 00 00 00 00                    ..........
+
+Metadata: none
+
+### After Egress-Translator
+
+Packet: same as above
+
+Metadata:
+metadata_t.axis_tdest = 0
+metadata_t.axis_tuser.payload_offset = 0
+
+### After Checksum Unit
+
+Packet: same as above
+
+Metadata:
+metadata_t.axis_tuser.unused = 0
+metadata_t.axis_tuser.payload_chksum = 0x584c
+
+### Output
+
+Packet: same as above
+
+Metadata: none
+
+
+Test Vector 2: Standard UDP/IPv6
+--------------------------------
+Description: UDP/IPv6 packet whose UDP checksum must be computed.
+Setup: Clear all tables.
+
+### Input
+
+Packet:
+b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x02\x86\xdd`\x00\x00\x00\x00\x0f\x11@\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xab\xe0\x00P\x00\x0f\xff\xffpayload'
+0000  00 00 00 00 00 01 00 00 00 00 00 02 86 DD 60 00  ..............`.
+0010  00 00 00 0F 11 40 FD 00 F0 0D CA FE 00 00 00 00  .....@..........
+0020  00 00 00 00 00 02 FD 00 F0 0D CA FE 00 00 00 00  ................
+0030  00 00 00 00 00 01 AB E0 00 50 00 0F FF FF 70 61  .........P....pa
+0040  79 6C 6F 61 64                                   yload
+
+Metadata: none
+
+### After Egress-Translator
+
+Packet:
+b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x02\x86\xdd`\x00\x00\x00\x00\x0f\x11@\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xab\xe0\x00P\x00\x0f\x00\x00payload'
+0000  00 00 00 00 00 01 00 00 00 00 00 02 86 DD 60 00  ..............`.
+0010  00 00 00 0F 11 40 FD 00 F0 0D CA FE 00 00 00 00  .....@..........
+0020  00 00 00 00 00 02 FD 00 F0 0D CA FE 00 00 00 00  ................
+0030  00 00 00 00 00 01 AB E0 00 50 00 0F 00 00 70 61  .........P....pa
+0040  79 6C 6F 61 64                                   yload
+
+Metadata:
+metadata_t.axis_tdest = 0
+metadata_t.axis_tuser.payload_offset = 54
+
+### After Checksum Unit
+
+Packet: same as above
+
+Metadata:
+metadata_t.axis_tuser.unused = 0
+metadata_t.axis_tuser.payload_chksum = 0x696f
+
+### Output
+
+Packet:
+b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x02\x86\xdd`\x00\x00\x00\x00\x0f\x11@\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\xfd\x00\xf0\r\xca\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xab\xe0\x00P\x00\x0f&Rpayload'
+0000  00 00 00 00 00 01 00 00 00 00 00 02 86 DD 60 00  ..............`.
+0010  00 00 00 0F 11 40 FD 00 F0 0D CA FE 00 00 00 00  .....@..........
+0020  00 00 00 00 00 02 FD 00 F0 0D CA FE 00 00 00 00  ................
+0030  00 00 00 00 00 01 AB E0 00 50 00 0F 26 52 70 61  .........P..&Rpa
+0040  79 6C 6F 61 64
+
+Metadata: none
