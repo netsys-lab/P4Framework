@@ -1,0 +1,6 @@
+after bulding, please configure axi stream swicth instance 0.
+
+axi_switch_0: tkeep -yes, tlast- yes , tuser width - 11
+
+then run synthesis
+
