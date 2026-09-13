@@ -1,38 +1,28 @@
 // *************************************************************************
+////FIN-OVGU Magdeburg
+// Address map for the 4-IP box (250MHz)
 //
-// Copyright 2020 Xilinx, Inc.
+//M00 = egress translator  (C_EGRESS_BASE_ADDR) base 0x000000  width 19 bit (512KB)
+//M01 = ingress classifier (C_P2P_BASE_ADDR)    base 0x080000  width 18 bit (256KB)
+//M02 = ingress translator (C_NEW_BASE_ADDR)    base 0x0C0000  width 17 bit (128KB)
+//M03 = dummy (C_DUMMY_BASE_ADDR)               base 0x0E0000  width 12 bit (4KB)
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// *************************************************************************
-// Address map for the box running at 250MHz (through PCI-e BAR2 1MB)
-//
-// System-level address range: 0x40000 - 0xFFFFF
+// System-level address range (local to box0): 0x00000 - 0xE0FFF (used)
+// All entirely within box0's existing 1MB system-level window --
+// no system_config address map changes needed.
 //
 // --------------------------------------------------
-//   BaseAddr |  HighAddr |  Module
+//   BaseAddr |  HighAddr |  Module              | Width
 // --------------------------------------------------
-//   0x0000   |  0x0FFF   |  Port-to-port ingress classifier
-// --------------------------------------------------
-//   0x1000   |  0x1FFF   |  Port-to-port ingress translator
-// --------------------------------------------------
-//   0x2000   |  0x2FFF   |  Port-to-port egress translator
-// --------------------------------------------------
-//   0x3000   |  0x3FFF   |  Dummy--removed
+//   0x00000  |  0x7FFFF  |  Egress translator   | 19 bit (512KB)
+//   0x80000  |  0xBFFFF  |  Ingress classifier  | 18 bit (256KB)
+//   0xC0000  |  0xDFFFF  |  Ingress translator  | 17 bit (128KB)
+//   0xE0000  |  0xE0FFF  |  Dummy               | 12 bit (4KB, matches its own REG_ADDR_W)
 // --------------------------------------------------
 `timescale 1ns/1ps
 module box_250mhz_address_map #(
-   //parameter C_DUMMY_BASE_ADDR = 32'h3000  //dummy base address
+   parameter C_DUMMY_BASE_ADDR = 32'h0E0000  //dummy base address
 ) (
 
 //input from system config
@@ -45,9 +35,9 @@ module box_250mhz_address_map #(
   output        s_axil_bvalid,
   output  [1:0] s_axil_bresp,
   input         s_axil_bready,
-  input         s_axil_arvalid,
-  input  [31:0] s_axil_araddr,
-  output        s_axil_arready,
+  (* mark_debug = "true" *) input         s_axil_arvalid,
+  (* mark_debug = "true" *) input  [31:0] s_axil_araddr,
+  (* mark_debug = "true" *) output        s_axil_arready,
   output        s_axil_rvalid,
   output [31:0] s_axil_rdata,
   output  [1:0] s_axil_rresp,
@@ -63,9 +53,9 @@ module box_250mhz_address_map #(
   input         m_axil_p2p_bvalid,
   input   [1:0] m_axil_p2p_bresp,
   output        m_axil_p2p_bready,
-  output        m_axil_p2p_arvalid,
-  output [31:0] m_axil_p2p_araddr,
-  input         m_axil_p2p_arready,
+  (* mark_debug = "true" *) output        m_axil_p2p_arvalid,
+  (* mark_debug = "true" *) output [31:0] m_axil_p2p_araddr,
+  (* mark_debug = "true" *) input         m_axil_p2p_arready,
   input         m_axil_p2p_rvalid,
   input  [31:0] m_axil_p2p_rdata,
   input   [1:0] m_axil_p2p_rresp,
@@ -81,9 +71,9 @@ module box_250mhz_address_map #(
   input         m_axil_new_bvalid,
   input   [1:0] m_axil_new_bresp,
   output        m_axil_new_bready,
-  output        m_axil_new_arvalid,
-  output [31:0] m_axil_new_araddr,
-  input         m_axil_new_arready,
+  (* mark_debug = "true" *) output        m_axil_new_arvalid,
+  (* mark_debug = "true" *) output [31:0] m_axil_new_araddr,
+  (* mark_debug = "true" *) input         m_axil_new_arready,
   input         m_axil_new_rvalid,
   input  [31:0] m_axil_new_rdata,
   input   [1:0] m_axil_new_rresp,
@@ -99,47 +89,48 @@ module box_250mhz_address_map #(
   input         m_axil_egress_bvalid,
   input   [1:0] m_axil_egress_bresp,
   output        m_axil_egress_bready,
-  output        m_axil_egress_arvalid,
-  output [31:0] m_axil_egress_araddr,
-  input         m_axil_egress_arready,
+  (* mark_debug = "true" *) output        m_axil_egress_arvalid,
+  (* mark_debug = "true" *) output [31:0] m_axil_egress_araddr,
+  (* mark_debug = "true" *) input         m_axil_egress_arready,
   input         m_axil_egress_rvalid,
   input  [31:0] m_axil_egress_rdata,
   input   [1:0] m_axil_egress_rresp,
   output        m_axil_egress_rready,
 
   //output to dummy
-  //output        m_axil_dummy_awvalid,
-  //output [31:0] m_axil_dummy_awaddr,
-  //input         m_axil_dummy_awready,
-  //output        m_axil_dummy_wvalid,
-  //output [31:0] m_axil_dummy_wdata,
-  //input         m_axil_dummy_wready,
-  //input         m_axil_dummy_bvalid,
-  //input   [1:0] m_axil_dummy_bresp,
-  //output        m_axil_dummy_bready,
-  //output        m_axil_dummy_arvalid,
-  //output [31:0] m_axil_dummy_araddr,
-  //input         m_axil_dummy_arready,
-  //input         m_axil_dummy_rvalid,
-  //input  [31:0] m_axil_dummy_rdata,
-  //input   [1:0] m_axil_dummy_rresp,
-  //output        m_axil_dummy_rready,
+  output        m_axil_dummy_awvalid,
+  output [31:0] m_axil_dummy_awaddr,
+  input         m_axil_dummy_awready,
+  output        m_axil_dummy_wvalid,
+  output [31:0] m_axil_dummy_wdata,
+  input         m_axil_dummy_wready,
+  input         m_axil_dummy_bvalid,
+  input   [1:0] m_axil_dummy_bresp,
+  output        m_axil_dummy_bready,
+  output        m_axil_dummy_arvalid,
+  output [31:0] m_axil_dummy_araddr,
+  input         m_axil_dummy_arready,
+  input         m_axil_dummy_rvalid,
+  input  [31:0] m_axil_dummy_rdata,
+  input   [1:0] m_axil_dummy_rresp,
+  output        m_axil_dummy_rready,
 
   input         aclk,
   input         aresetn
 );
 
-  // Parameters for address map and slaves
-  localparam C_NUM_SLAVES  = 3;  //  number of slaves
+  localparam C_NUM_SLAVES  = 4;
 
-  localparam C_P2P_INDEX   = 0;  //ingress Classifier
-  //localparam C_DUMMY_INDEX = 1;   // Dummy
-  localparam C_NEW_INDEX   = 1;  // ingress translator
-  localparam C_EGRESS_INDEX   = 2;  // egress translator
+  // address should match the crossbar's actual per-index base address
 
-  localparam C_P2P_BASE_ADDR = 32'h0000;  //ingress Classifier
-  localparam C_NEW_BASE_ADDR   = 32'h1000; // ingress translator
-  localparam C_EGRESS_BASE_ADDR   = 32'h2000; // egress translator
+  localparam C_EGRESS_INDEX = 0;  // egress translator
+  localparam C_P2P_INDEX    = 1;  // ingress classifier
+  localparam C_NEW_INDEX    = 2;  // ingress translator
+  localparam C_DUMMY_INDEX  = 3;  // dummy
+
+  localparam C_EGRESS_BASE_ADDR = 32'h000000;  // egress translator
+  localparam C_P2P_BASE_ADDR    = 32'h080000;  // ingress classifier
+  localparam C_NEW_BASE_ADDR    = 32'h0C0000;  // ingress translator
 
   wire                  [31:0] axil_p2p_awaddr;
   wire                  [31:0] axil_p2p_araddr;
@@ -147,10 +138,8 @@ module box_250mhz_address_map #(
   wire                  [31:0] axil_new_araddr;
   wire                  [31:0] axil_egress_awaddr;
   wire                  [31:0] axil_egress_araddr;
-  //wire                  [31:0] axil_dummy_awaddr;
-  //wire                  [31:0] axil_dummy_araddr;
-
-
+  wire                  [31:0] axil_dummy_awaddr;
+  wire                  [31:0] axil_dummy_araddr;
 
   wire  [(1*C_NUM_SLAVES)-1:0] axil_awvalid;
   wire [(32*C_NUM_SLAVES)-1:0] axil_awaddr;
@@ -170,14 +159,14 @@ module box_250mhz_address_map #(
   wire  [(1*C_NUM_SLAVES)-1:0] axil_rready;
 
   // Adjust AXI-Lite address so that each slave can assume a base address of 0x0
-  assign axil_p2p_awaddr                       = axil_awaddr[C_P2P_INDEX*32 +: 32] - C_P2P_BASE_ADDR;
-  assign axil_p2p_araddr                       = axil_araddr[C_P2P_INDEX*32 +: 32] - C_P2P_BASE_ADDR;
-  assign axil_new_awaddr                       = axil_awaddr[C_NEW_INDEX*32 +: 32] - C_NEW_BASE_ADDR;
-  assign axil_new_araddr                       = axil_araddr[C_NEW_INDEX*32 +: 32] - C_NEW_BASE_ADDR;
-  assign axil_egress_awaddr                    = axil_awaddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
-  assign axil_egress_araddr                    = axil_araddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
-  //assign axil_dummy_awaddr                     = axil_awaddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
-  //assign axil_dummy_araddr                     = axil_araddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
+  assign axil_p2p_awaddr    = axil_awaddr[C_P2P_INDEX*32 +: 32] - C_P2P_BASE_ADDR;
+  assign axil_p2p_araddr    = axil_araddr[C_P2P_INDEX*32 +: 32] - C_P2P_BASE_ADDR;
+  assign axil_new_awaddr    = axil_awaddr[C_NEW_INDEX*32 +: 32] - C_NEW_BASE_ADDR;
+  assign axil_new_araddr    = axil_araddr[C_NEW_INDEX*32 +: 32] - C_NEW_BASE_ADDR;
+  assign axil_egress_awaddr = axil_awaddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
+  assign axil_egress_araddr = axil_araddr[C_EGRESS_INDEX*32 +: 32] - C_EGRESS_BASE_ADDR;
+  assign axil_dummy_awaddr  = axil_awaddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
+  assign axil_dummy_araddr  = axil_araddr[C_DUMMY_INDEX*32 +: 32] - C_DUMMY_BASE_ADDR;
 
   //ingress classifier
   assign m_axil_p2p_awvalid                 = axil_awvalid[C_P2P_INDEX];
@@ -221,7 +210,7 @@ module box_250mhz_address_map #(
   assign axil_awready[C_EGRESS_INDEX]          = m_axil_egress_awready;
   assign m_axil_egress_wvalid                  = axil_wvalid[C_EGRESS_INDEX];
   assign m_axil_egress_wdata                   = axil_wdata[C_EGRESS_INDEX*32 +: 32];
-  assign axil_wready[C_EGRESS_INDEX]          = m_axil_egress_wready;
+  assign axil_wready[C_EGRESS_INDEX]           = m_axil_egress_wready;
   assign axil_bvalid[C_EGRESS_INDEX]           = m_axil_egress_bvalid;
   assign axil_bresp[C_EGRESS_INDEX*2 +: 2]     = m_axil_egress_bresp;
   assign m_axil_egress_bready                  = axil_bready[C_EGRESS_INDEX];
@@ -234,24 +223,22 @@ module box_250mhz_address_map #(
   assign m_axil_egress_rready                  = axil_rready[C_EGRESS_INDEX];
 
   //dummy
-  //assign m_axil_dummy_awvalid               = axil_awvalid[C_DUMMY_INDEX];
-  //assign m_axil_dummy_awaddr                = axil_dummy_awaddr;
-  //assign axil_awready[C_DUMMY_INDEX]        = m_axil_dummy_awready;
-  //assign m_axil_dummy_wvalid                = axil_wvalid[C_DUMMY_INDEX];
-  //assign m_axil_dummy_wdata                 = axil_wdata[C_DUMMY_INDEX*32 +: 32];
-  //assign axil_wready[C_DUMMY_INDEX]         = m_axil_dummy_wready;
-  //assign axil_bvalid[C_DUMMY_INDEX]         = m_axil_dummy_bvalid;
-  //assign axil_bresp[C_DUMMY_INDEX*2 +: 2]   = m_axil_dummy_bresp;
-  //assign m_axil_dummy_bready                = axil_bready[C_DUMMY_INDEX];
-  //assign m_axil_dummy_arvalid               = axil_arvalid[C_DUMMY_INDEX];
-  //assign m_axil_dummy_araddr                = axil_dummy_araddr;
-  //assign axil_arready[C_DUMMY_INDEX]        = m_axil_dummy_arready;
-  //assign axil_rvalid[C_DUMMY_INDEX]         = m_axil_dummy_rvalid;
-  //assign axil_rdata[C_DUMMY_INDEX*32 +: 32] = m_axil_dummy_rdata;
-  //assign axil_rresp[C_DUMMY_INDEX* 2 +: 2]  = m_axil_dummy_rresp;
-  //assign m_axil_dummy_rready                = axil_rready[C_DUMMY_INDEX];
-
-
+  assign m_axil_dummy_awvalid               = axil_awvalid[C_DUMMY_INDEX];
+  assign m_axil_dummy_awaddr                = axil_dummy_awaddr;
+  assign axil_awready[C_DUMMY_INDEX]        = m_axil_dummy_awready;
+  assign m_axil_dummy_wvalid                = axil_wvalid[C_DUMMY_INDEX];
+  assign m_axil_dummy_wdata                 = axil_wdata[C_DUMMY_INDEX*32 +: 32];
+  assign axil_wready[C_DUMMY_INDEX]         = m_axil_dummy_wready;
+  assign axil_bvalid[C_DUMMY_INDEX]         = m_axil_dummy_bvalid;
+  assign axil_bresp[C_DUMMY_INDEX*2 +: 2]   = m_axil_dummy_bresp;
+  assign m_axil_dummy_bready                = axil_bready[C_DUMMY_INDEX];
+  assign m_axil_dummy_arvalid               = axil_arvalid[C_DUMMY_INDEX];
+  assign m_axil_dummy_araddr                = axil_dummy_araddr;
+  assign axil_arready[C_DUMMY_INDEX]        = m_axil_dummy_arready;
+  assign axil_rvalid[C_DUMMY_INDEX]         = m_axil_dummy_rvalid;
+  assign axil_rdata[C_DUMMY_INDEX*32 +: 32] = m_axil_dummy_rdata;
+  assign axil_rresp[C_DUMMY_INDEX* 2 +: 2]  = m_axil_dummy_rresp;
+  assign m_axil_dummy_rready                = axil_rready[C_DUMMY_INDEX];
 
   box_250mhz_axi_crossbar xbar_inst (
     .s_axi_awaddr  (s_axil_awaddr),
@@ -294,11 +281,8 @@ module box_250mhz_address_map #(
     .m_axi_rvalid  (axil_rvalid),
     .m_axi_rready  (axil_rready),
 
-
     .aclk          (aclk),
     .aresetn       (aresetn)
   );
-
-
 
 endmodule: box_250mhz_address_map
