@@ -1,10 +1,15 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-////FIN-OVGU Magdeburg
+// FIN-OVGU Magdeburg
 // Module Name: calculator_UDP_chksm_egress
-// Revision 0.02 - Same fix set as ingress_checksum_calculator.sv, adapted to
-//   this module's narrower metadata widths (27-bit in: bit0=tdest,
-//   [16:1]=size, [26:17]=offset; 17-bit out: [16:1]=checksum, bit0=tdest).
+//
+// Egress counterpart of ingress_checksum_calculator. Computes the 16-bit
+// one's-complement sum from payload_offset to the end of the packet and passes
+// it to egress_checksum.p4 as payload_chksum, raw (not inverted) and in network
+// byte order.
+//
+// user_metadata_in  (10b): payload_offset
+// user_metadata_out (16b): payload_chksum
 //////////////////////////////////////////////////////////////////////////////////
 
 module calculator_UDP_chksm_egress #(
@@ -18,7 +23,7 @@ module calculator_UDP_chksm_egress #(
     input  logic         s_axis_tlast,
     output logic         s_axis_tready,
     input  logic         s_axis_tvalid,
-    input  logic [26:0]   user_metadata_in,
+    input  logic [9:0]    user_metadata_in,        // payload_offset
     input  logic          user_metadata_in_valid,
 
     output logic [511:0] m_axis_tdata,
@@ -26,7 +31,7 @@ module calculator_UDP_chksm_egress #(
     output logic         m_axis_tlast,
     input  logic         m_axis_tready,
     output logic         m_axis_tvalid,
-    output logic [16:0]  user_metadata_out,
+    output logic [15:0]  user_metadata_out,       // payload_chksum
     output logic         user_metadata_out_valid
 );
 
@@ -35,14 +40,21 @@ module calculator_UDP_chksm_egress #(
     logic [31:0][15:0] words;
     logic [31:0][15:0] sum_stage1;
     logic [17:0] fold_tmp;
+    logic [16:0] fold_tmp2;
+    logic [15:0] fold_res;
+    // Words are taken as tdata[16j+15:16j], i.e. byte-swapped relative to network
+    // order. The one's-complement sum is byte-order independent, so the result is
+    // swapped back once at the end.
+
     logic [15:0] payload_offset;
     logic [15:0] beat_offset_words;
     logic        processing[4];
     logic [Max_frag_count:0][511:0] fragment_buffer[4];
     logic [5:0]   fragment_count[4];
+    logic [63:0]  last_tkeep[4];      // tkeep of the packet's last beat
     logic [5:0]   fragment_count_initial[4];
     logic         metadata_latched[4];
-    logic [26:0]  metadata_latched_in[4];
+    logic [9:0]   metadata_latched_in[4];
     logic [1:0]   buffer_select;
     logic         ready_to_transmit[4];
     logic         transmit_active;
@@ -108,7 +120,7 @@ module calculator_UDP_chksm_egress #(
     always_ff @(posedge clk ) begin
         if (!rst) begin
             m_axis_tvalid <= 1'b0;
-            user_metadata_out <= 17'b0;
+            user_metadata_out <= 16'b0;
             user_metadata_out_valid <= 1'b0;
             checksum <= '{default: 16'h0000};
             final_checksum <= '{default: 16'h0000};
@@ -123,10 +135,11 @@ module calculator_UDP_chksm_egress #(
             sum_valid_pipe <= '{default: 1'b0};
             tlast_pipe <= '{default: 1'b0};
             fragment_count <= '{default: 6'b0};
+            last_tkeep <= '{default: 64'b0};
             fragment_count_initial <= '{default: 6'b0};
             fragment_buffer <= '{default: 512'b0};
             metadata_latched <= '{default: 1'b0};
-            metadata_latched_in <= '{default: 27'b0};
+            metadata_latched_in <= '{default: 10'b0};
             buffer_select <= 2'b00;
             ready_to_transmit <= '{default: 1'b0};
             transmit_active <= 1'b0;
@@ -143,12 +156,13 @@ module calculator_UDP_chksm_egress #(
 
             for (int i = 0; i < 4; i++) begin
                 if (sum_valid_pipe[i]) begin
-                    fold_tmp = {2'b0, checksum[i]} + {2'b0, sum_stage2_pipe[i][15:0]} + {2'b0, sum_stage2_pipe[i][31:16]};
-                    checksum[i] <= fold_tmp[15:0] + {14'b0, fold_tmp[17:16]};
+                    fold_tmp  = {2'b0, checksum[i]} + {2'b0, sum_stage2_pipe[i][15:0]} + {2'b0, sum_stage2_pipe[i][31:16]};
+                    fold_tmp2 = {1'b0, fold_tmp[15:0]} + {15'b0, fold_tmp[17:16]};
+                    fold_res  = fold_tmp2[15:0] + {15'b0, fold_tmp2[16]};
+                    checksum[i] <= fold_res;
                     sum_valid_pipe[i] <= 1'b0;
                     if (tlast_pipe[i]) begin
-                        // FIXED: restored the one's-complement inversion.
-                        final_checksum[i] <= ~(fold_tmp[15:0] + {14'b0, fold_tmp[17:16]});
+                        final_checksum[i] <= {fold_res[7:0], fold_res[15:8]};
                         ready_to_transmit[i] <= 1'b1;
                         transmit_queue[transmit_queue_tail] <= i;
                         transmit_queue_tail <= transmit_queue_tail + 1;
@@ -189,7 +203,7 @@ module calculator_UDP_chksm_egress #(
 
                             for (int j = 0; j < 32; j++) words[j] = s_axis_tdata[j * 16 +: 16];
 
-                            beat_offset_words = user_metadata_in[26:17] / 2;
+                            beat_offset_words = user_metadata_in[9:0] / 2;   // payload_offset
                             payload_offset <= (beat_offset_words > 32) ? (beat_offset_words - 32) : 16'b0;
 
                             for (int j = 0; j < 32; j++) begin
@@ -208,7 +222,10 @@ module calculator_UDP_chksm_egress #(
                             sum_stage1_valid_pipe[i] <= 1'b1;
                             sum_stage1_tlast_pipe[i] <= s_axis_tlast;
 
-                            if (s_axis_tlast) buffer_select <= buffer_select + 1;
+                            if (s_axis_tlast) begin
+                                buffer_select <= buffer_select + 1;
+                                last_tkeep[i] <= s_axis_tkeep;
+                            end
                         end
                     end
 
@@ -239,12 +256,14 @@ module calculator_UDP_chksm_egress #(
                             sum_stage1_valid_pipe[i] <= 1'b1;
                             sum_stage1_tlast_pipe[i] <= s_axis_tlast;
 
-                            if (s_axis_tlast) buffer_select <= buffer_select + 1;
+                            if (s_axis_tlast) begin
+                                buffer_select <= buffer_select + 1;
+                                last_tkeep[i] <= s_axis_tkeep;
+                            end
                         end
                     end
 
                     FINALIZE: begin
-                        // Waits on ready_to_transmit[i].
                     end
 
                     DATAOUT: begin
@@ -257,26 +276,23 @@ module calculator_UDP_chksm_egress #(
 
                                 m_axis_tvalid <= 1'b1;
                                 m_axis_tdata <= fragment_buffer[current_buffer_index][current_fragment_count_initial - current_fragment_count];
-                                m_axis_tkeep <= 64'hFFFFFFFFFFFFFFFF;
+                                m_axis_tkeep <= (current_fragment_count == 1) ? last_tkeep[current_buffer_index] : 64'hFFFFFFFFFFFFFFFF;
                                 m_axis_tlast <= (current_fragment_count == 1);
 
                                 if (current_fragment_count == current_fragment_count_initial) begin
-                                    // Output layout: [16:1]=checksum, bit0=tdest
-                                    // (matches the original metadata_latched_in[0:0]
-                                    // usage -- bit 0 of the 27-bit input is tdest).
-                                    user_metadata_out <= {final_checksum[current_buffer_index], metadata_latched_in[current_buffer_index][0:0]};
+                                    user_metadata_out <= final_checksum[current_buffer_index];
                                     user_metadata_out_valid <= 1'b1;
                                     checksum[current_buffer_index] <= 16'b0;
                                     final_checksum[current_buffer_index] <= 16'b0;
                                 end else begin
-                                    user_metadata_out <= 17'b0;
+                                    user_metadata_out <= 16'b0;
                                     user_metadata_out_valid <= 1'b0;
                                 end
 
                                 fragment_count[current_buffer_index] <= current_fragment_count - 1;
                             end else begin
                                 m_axis_tvalid <= 1'b0;
-                                user_metadata_out <= 17'b0;
+                                user_metadata_out <= 16'b0;
                                 user_metadata_out_valid <= 1'b0;
                                 transmit_queue_head <= transmit_queue_head + 1;
                                 m_axis_tdata <= 512'b0;
@@ -288,7 +304,7 @@ module calculator_UDP_chksm_egress #(
                                 fragment_count[current_buffer_index] <= 6'b0;
                                 fragment_count_initial[current_buffer_index] <= 6'b0;
                                 metadata_latched[current_buffer_index] <= 1'b0;
-                                metadata_latched_in[current_buffer_index] <= 27'b0;
+                                metadata_latched_in[current_buffer_index] <= 10'b0;
                                 ready_to_transmit[current_buffer_index] <= 1'b0;
 
                                 if (transmit_queue_head == transmit_queue_tail) begin
