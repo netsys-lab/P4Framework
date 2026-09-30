@@ -1,10 +1,15 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-//FIN-OVGU Magdeburg
+// FIN-OVGU Magdeburg
 // Module Name: ingress_checksum_calculator
-//   tready gating, checksum inversion, carry widening, payload_offset
-//   hoisting, 3-stage checksum pipeline with self-timing FINALIZE, and
-//   pre-registered current_buffer_index in DATAOUT.
+//
+// Buffers each packet (up to Max_frag_count+1 beats, 4 packets in flight) and
+// computes the 16-bit one's-complement sum from payload_offset to the end of the
+// packet. The sum is passed to the ingress translator as payload_chksum, raw
+// (not inverted) and in network byte order.
+//
+// user_metadata_in  (33b): tuser_size[32:17] is_scion[16] hop_fields[15:10] payload_offset[9:0]
+// user_metadata_out (39b): tuser_size[38:23] is_scion[22] hop_fields[21:16] payload_chksum[15:0]
 //////////////////////////////////////////////////////////////////////////////////
 
 module ingress_checksum_calculator #(
@@ -27,7 +32,7 @@ module ingress_checksum_calculator #(
     output logic         m_axis_tlast,
     input  logic         m_axis_tready,
     output logic         m_axis_tvalid,
-    output logic [22:0]  user_metadata_out,
+    output logic [38:0]  user_metadata_out,
     output logic         user_metadata_out_valid
 );
 
@@ -36,11 +41,18 @@ module ingress_checksum_calculator #(
     logic [31:0][15:0] words;
     logic [31:0][15:0] sum_stage1;
     logic [17:0] fold_tmp;
+    logic [16:0] fold_tmp2;
+    logic [15:0] fold_res;
+    // Words are taken as tdata[16j+15:16j], i.e. byte-swapped relative to network
+    // order. The one's-complement sum is byte-order independent, so the result is
+    // swapped back once at the end.
+
     logic [15:0] payload_offset;
     logic [15:0] beat_offset_words;
     logic        processing[4];
     logic [Max_frag_count:0][511:0] fragment_buffer[4];
     logic [5:0]   fragment_count[4];
+    logic [63:0]  last_tkeep[4];      // tkeep of the packet's last beat
     logic [5:0]   fragment_count_initial[4];
     logic         metadata_latched[4];
     logic [32:0]  metadata_latched_in[4];
@@ -94,8 +106,6 @@ module ingress_checksum_calculator #(
                     next_state[i] = (s_axis_tlast && buffer_select == i) ? FINALIZE : PROCESS;
                 end
                 FINALIZE: begin
-                    // FIXED: waits for ready_to_transmit (set when the pipelined
-                    // fold actually completes) instead of a fixed cycle count.
                     next_state[i] = ready_to_transmit[i] ? DATAOUT : FINALIZE;
                 end
                 DATAOUT: begin
@@ -111,7 +121,7 @@ module ingress_checksum_calculator #(
     always_ff @(posedge clk ) begin
         if (!rst) begin
             m_axis_tvalid <= 1'b0;
-            user_metadata_out <= 23'b0;
+            user_metadata_out <= 39'b0;
             user_metadata_out_valid <= 1'b0;
             checksum <= '{default: 16'h0000};
             final_checksum <= '{default: 16'h0000};
@@ -126,10 +136,11 @@ module ingress_checksum_calculator #(
             sum_valid_pipe <= '{default: 1'b0};
             tlast_pipe <= '{default: 1'b0};
             fragment_count <= '{default: 6'b0};
+            last_tkeep <= '{default: 64'b0};
             fragment_count_initial <= '{default: 6'b0};
             fragment_buffer <= '{default: 512'b0};
             metadata_latched <= '{default: 1'b0};
-            metadata_latched_in <= '{default: 17'b0};
+            metadata_latched_in <= '{default: 33'b0};
             buffer_select <= 2'b00;
             ready_to_transmit <= '{default: 1'b0};
             transmit_active <= 1'b0;
@@ -144,15 +155,16 @@ module ingress_checksum_calculator #(
             m_axis_tdata <= 512'b0;
         end else begin
 
-            // PIPELINE STAGE 2: fold sum_stage2_pipe into checksum[i].
+            // stage 2: fold the beat sum into the running checksum
             for (int i = 0; i < 4; i++) begin
                 if (sum_valid_pipe[i]) begin
-                    fold_tmp = {2'b0, checksum[i]} + {2'b0, sum_stage2_pipe[i][15:0]} + {2'b0, sum_stage2_pipe[i][31:16]};
-                    checksum[i] <= fold_tmp[15:0] + {14'b0, fold_tmp[17:16]};
+                    fold_tmp  = {2'b0, checksum[i]} + {2'b0, sum_stage2_pipe[i][15:0]} + {2'b0, sum_stage2_pipe[i][31:16]};
+                    fold_tmp2 = {1'b0, fold_tmp[15:0]} + {15'b0, fold_tmp[17:16]};
+                    fold_res  = fold_tmp2[15:0] + {15'b0, fold_tmp2[16]};
+                    checksum[i] <= fold_res;
                     sum_valid_pipe[i] <= 1'b0;
                     if (tlast_pipe[i]) begin
-                        // restored the one's-complement inversion.
-                        final_checksum[i] <= ~(fold_tmp[15:0] + {14'b0, fold_tmp[17:16]});
+                        final_checksum[i] <= {fold_res[7:0], fold_res[15:8]};
                         ready_to_transmit[i] <= 1'b1;
                         transmit_queue[transmit_queue_tail] <= i;
                         transmit_queue_tail <= transmit_queue_tail + 1;
@@ -163,7 +175,7 @@ module ingress_checksum_calculator #(
                 end
             end
 
-            // PIPELINE STAGE 1b: adder tree on last cycle's masked words.
+            // stage 1: add up the masked words of the previous beat
             for (int i = 0; i < 4; i++) begin
                 if (sum_stage1_valid_pipe[i]) begin
                     sum_stage2_pipe[i] <= sum_stage1_pipe[i][0]  + sum_stage1_pipe[i][1]  + sum_stage1_pipe[i][2]  + sum_stage1_pipe[i][3] +
@@ -194,8 +206,7 @@ module ingress_checksum_calculator #(
 
                             for (int j = 0; j < 32; j++) words[j] = s_axis_tdata[j * 16 +: 16];
 
-                            // FIXED: computed once per beat, not 32x per beat.
-                            beat_offset_words = user_metadata_in[32:23] / 2;
+                            beat_offset_words = user_metadata_in[9:0] / 2;   // payload_offset
                             payload_offset <= (beat_offset_words > 32) ? (beat_offset_words - 32) : 16'b0;
 
                             for (int j = 0; j < 32; j++) begin
@@ -214,7 +225,10 @@ module ingress_checksum_calculator #(
                             sum_stage1_valid_pipe[i] <= 1'b1;
                             sum_stage1_tlast_pipe[i] <= s_axis_tlast;
 
-                            if (s_axis_tlast) buffer_select <= buffer_select + 1;
+                            if (s_axis_tlast) begin
+                                buffer_select <= buffer_select + 1;
+                                last_tkeep[i] <= s_axis_tkeep;
+                            end
                         end
                     end
 
@@ -245,7 +259,10 @@ module ingress_checksum_calculator #(
                             sum_stage1_valid_pipe[i] <= 1'b1;
                             sum_stage1_tlast_pipe[i] <= s_axis_tlast;
 
-                            if (s_axis_tlast) buffer_select <= buffer_select + 1;
+                            if (s_axis_tlast) begin
+                                buffer_select <= buffer_select + 1;
+                                last_tkeep[i] <= s_axis_tkeep;
+                            end
                         end
                     end
 
@@ -263,23 +280,23 @@ module ingress_checksum_calculator #(
 
                                 m_axis_tvalid <= 1'b1;
                                 m_axis_tdata <= fragment_buffer[current_buffer_index][current_fragment_count_initial - current_fragment_count];
-                                m_axis_tkeep <= 64'hFFFFFFFFFFFFFFFF;
+                                m_axis_tkeep <= (current_fragment_count == 1) ? last_tkeep[current_buffer_index] : 64'hFFFFFFFFFFFFFFFF;
                                 m_axis_tlast <= (current_fragment_count == 1);
 
                                 if (current_fragment_count == current_fragment_count_initial) begin
-                                    user_metadata_out <= {final_checksum[current_buffer_index], metadata_latched_in[current_buffer_index][6:0]};
+                                    user_metadata_out <= {metadata_latched_in[current_buffer_index][32:10], final_checksum[current_buffer_index]};
                                     user_metadata_out_valid <= 1'b1;
                                     checksum[current_buffer_index] <= 16'b0;
                                     final_checksum[current_buffer_index] <= 16'b0;
                                 end else begin
-                                    user_metadata_out <= 23'b0;
+                                    user_metadata_out <= 39'b0;
                                     user_metadata_out_valid <= 1'b0;
                                 end
 
                                 fragment_count[current_buffer_index] <= current_fragment_count - 1;
                             end else begin
                                 m_axis_tvalid <= 1'b0;
-                                user_metadata_out <= 23'b0;
+                                user_metadata_out <= 39'b0;
                                 user_metadata_out_valid <= 1'b0;
                                 transmit_queue_head <= transmit_queue_head + 1;
                                 m_axis_tdata <= 512'b0;
@@ -291,7 +308,7 @@ module ingress_checksum_calculator #(
                                 fragment_count[current_buffer_index] <= 6'b0;
                                 fragment_count_initial[current_buffer_index] <= 6'b0;
                                 metadata_latched[current_buffer_index] <= 1'b0;
-                                metadata_latched_in[current_buffer_index] <= 17'b0;
+                                metadata_latched_in[current_buffer_index] <= 33'b0;
                                 ready_to_transmit[current_buffer_index] <= 1'b0;
 
                                 if (transmit_queue_head == transmit_queue_tail) begin

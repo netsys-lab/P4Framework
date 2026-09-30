@@ -274,9 +274,10 @@ header sc_opts_h {
 #define CPU_HDR_SIZE_BYTES 4
 
 typedef bit<8> to_cpu_reason_t;
-const to_cpu_reason_t TO_CPU_REASON_SCMP = 0;
-const to_cpu_reason_t TO_CPU_REASON_ICMP = 1;
-const to_cpu_reason_t TO_CPU_REASON_NO_PATH = 2;
+const to_cpu_reason_t TO_CPU_REASON_INGRESS_SCMP = 1;
+const to_cpu_reason_t TO_CPU_REASON_EGRESS_SCMP = 2;
+const to_cpu_reason_t TO_CPU_REASON_EGRESS_ICMP = 3;
+const to_cpu_reason_t TO_CPU_REASON_EGRESS_NEW_FLOW = 4;
 
 header cpu_h
 {
@@ -294,13 +295,19 @@ header cpu_h
 #define _SCITRA_ADDR_MAPPING_GUARD
 
 #define MAPPED_ISD_BITS 12
-#define MAPPED_AS_BITS 20
+#define MAPPED_AS_BITS_BGP 19
+#define MAPPED_AS_BITS_SCI 32
 #define SCION_PREFIX 8w0xfc
 
 #define extract_prefix(ip) ip[127:120]
 #define extract_isd(ip) ip[119:108]
-#define extract_asn(ip) ip[107:88]
-#define extract_network(ip) ip[87:64]
+
+#define extract_asn_bgp(ip) ip[107:88]
+#define extract_network_bgp(ip) ip[87:64]
+
+#define extract_asn_sci(ip) ip[107:72]
+#define extract_network_sci(ip) ip[71:64]
+
 #define extract_host_prefix(ip) ip[63:32]
 #define extract_host_v4(ip) ip[31:0]
 #define extract_host_v6(ip) ip[63:0]
@@ -311,9 +318,13 @@ header cpu_h
 
 struct metadata_t
 {
-    // If is_scion is 1, hop_fields is the total number of hop fields in the packet.
+    // Sideband size data from AXI stream
+    bit<16> tuser_size;
+    // Whether the packet has a SCION header
     bit<1>  is_scion;
+    // hop_fields is the total number of hop fields in the packet. Valid if is_scion == 1
     bit<6>  hop_fields;
+    // Output from checksum unit
     bit<16> payload_chksum;
 }
 
@@ -505,7 +516,7 @@ parser IngrTransParser(
 
     state info_field1 {
         pkt.extract(hdr.path_info1);
-         transition select (hdr.path_meta.seg2_len) {
+        transition select (hdr.path_meta.seg2_len) {
             0       : hop_fields;
             default : info_field2;
         }
@@ -680,6 +691,7 @@ control IngrTransProcessing(
 {
     // === Variables ===
 
+    bit<16> discard_bytes = 0;
     bit<16> checksum = 0;
     bit<128> new_ipv6_src = 0;
     bit<128> new_ipv6_dst = 0;
@@ -719,16 +731,16 @@ control IngrTransProcessing(
     // Translates the SCION-IPv4 source address to a SCION-mapped IPv6.
     // The match key is used to make sure the address is mappable, drop the
     // packet if not. (TODO: Revisit what to do with untranslatable packets)
-    // The table must contain a two entries:
-    // 0, 0      => translateSource46BGP
-    // 0, 0x2000 => translateSource46SCION
+    // The table must contain two entries:
+    // 0, 0 => translateSource46BGP
+    // 0, 2 => translateSource46SCION
 
     // for BGP-style ASNs
     action translateSource46BGP() {
         extract_prefix(new_ipv6_src) = SCION_PREFIX;
         extract_isd(new_ipv6_src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(new_ipv6_src) = 1w0 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
-        extract_network(new_ipv6_src) = 0;
+        extract_asn_bgp(new_ipv6_src) = 1w0 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS_BGP-1:0];
+        extract_network_bgp(new_ipv6_src) = 0;
         extract_host_prefix(new_ipv6_src) = 0xffff;
         extract_host_v4(new_ipv6_src) = hdr.scion_src_host_4.addr;
     }
@@ -737,8 +749,8 @@ control IngrTransProcessing(
     action translateSource46SCION() {
         extract_prefix(new_ipv6_src) = SCION_PREFIX;
         extract_isd(new_ipv6_src) = hdr.scion_common.src_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(new_ipv6_src) = 1w1 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS-2:0];
-        extract_network(new_ipv6_src) = 0;
+        extract_asn_sci(new_ipv6_src) = 4w14 ++ hdr.scion_common.src_asn[MAPPED_AS_BITS_SCI-1:0];
+        extract_network_sci(new_ipv6_src) = 0;
         extract_host_prefix(new_ipv6_src) = 0xffff;
         extract_host_v4(new_ipv6_src) = hdr.scion_src_host_4.addr;
     }
@@ -746,7 +758,7 @@ control IngrTransProcessing(
     table tab_source_translation_46 {
         key = {
             hdr.scion_common.src_isd[15:MAPPED_ISD_BITS] : exact;
-            hdr.scion_common.src_asn[47:MAPPED_AS_BITS]  : exact;
+            hdr.scion_common.src_asn[47:32]              : exact;
         }
         actions = {
             translateSource46BGP;
@@ -762,15 +774,15 @@ control IngrTransProcessing(
     // The match key is used to make sure the address is mappable, drop the
     // packet if not. (TODO: Revisit what to do with untranslatable packets)
     // The table must contain a two entries:
-    // 0, 0      => translateDest46BGP
-    // 0, 0x2000 => translateDest46SCION
+    // 0, 0 => translateSource46BGP
+    // 0, 2 => translateSource46SCION
 
     // for BGP-style ASNs
     action translateDest46BGP() {
         extract_prefix(new_ipv6_dst) = SCION_PREFIX;
         extract_isd(new_ipv6_dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(new_ipv6_dst) = 1w0 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
-        extract_network(new_ipv6_dst) = 0;
+        extract_asn_bgp(new_ipv6_dst) = 1w0 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS_BGP-1:0];
+        extract_network_bgp(new_ipv6_dst) = 0;
         extract_host_prefix(new_ipv6_dst) = 0xffff;
         extract_host_v4(new_ipv6_dst) = hdr.scion_dst_host_4.addr;
     }
@@ -779,8 +791,8 @@ control IngrTransProcessing(
     action translateDest46SCION() {
         extract_prefix(new_ipv6_dst) = SCION_PREFIX;
         extract_isd(new_ipv6_dst) = hdr.scion_common.dst_isd[MAPPED_ISD_BITS-1:0];
-        extract_asn(new_ipv6_dst) = 1w1 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS-2:0];
-        extract_network(new_ipv6_dst) = 0;
+        extract_asn_sci(new_ipv6_dst) = 4w14 ++ hdr.scion_common.dst_asn[MAPPED_AS_BITS_SCI-1:0];
+        extract_network_sci(new_ipv6_dst) = 0;
         extract_host_prefix(new_ipv6_dst) = 0xffff;
         extract_host_v4(new_ipv6_dst) = hdr.scion_dst_host_4.addr;
     }
@@ -788,7 +800,7 @@ control IngrTransProcessing(
     table tab_dest_translation_46 {
         key = {
             hdr.scion_common.dst_isd[15:MAPPED_ISD_BITS] : exact;
-            hdr.scion_common.dst_asn[47:MAPPED_AS_BITS]  : exact;
+            hdr.scion_common.dst_asn[47:32]              : exact;
         }
         actions = {
             translateDest46BGP;
@@ -825,7 +837,9 @@ control IngrTransProcessing(
         hdr.outer_udp.chksum = 0;
 
         hdr.cpu.setValid();
-        hdr.cpu = { TO_CPU_REASON_SCMP, 0 };
+        hdr.cpu = { TO_CPU_REASON_INGRESS_SCMP, 0 };
+
+        meta.tuser_size = meta.tuser_size + UDP_HDR_SIZE_BYTES + CPU_HDR_SIZE_BYTES;
 
         cntTranslated.count(CNT_TO_CPU);
     }
@@ -886,15 +900,47 @@ control IngrTransProcessing(
             // Check if destination IA is correct
             tab_dest_ia.apply();
 
+            // Adjust packet size metadata
+            meta.tuser_size = meta.tuser_size - UDP_HDR_SIZE_BYTES - SC_COMMON_HDR_SIZE_BYTES;
+
+            if (hdr.ipv4.isValid()) meta.tuser_size = meta.tuser_size - IPV4_HDR_MIN_SIZE_BYTES;
+            if (!hdr.ipv6.isValid()) meta.tuser_size = meta.tuser_size + IPV6_HDR_SIZE_BYTES;
+
+            if (hdr.scion_dst_host_4.isValid()) meta.tuser_size = meta.tuser_size - 4;
+            if (hdr.scion_dst_host_16.isValid()) meta.tuser_size = meta.tuser_size - 16;
+            if (hdr.scion_src_host_4.isValid()) meta.tuser_size = meta.tuser_size - 4;
+            if (hdr.scion_src_host_16.isValid()) meta.tuser_size = meta.tuser_size - 16;
+
+            if (hdr.path_meta.isValid()) meta.tuser_size = meta.tuser_size - 4;
+            if (hdr.path_info0.isValid()) meta.tuser_size = meta.tuser_size - 8;
+            if (hdr.path_info1.isValid()) meta.tuser_size = meta.tuser_size - 8;
+            if (hdr.path_info2.isValid()) meta.tuser_size = meta.tuser_size - 8;
+
+            if (hdr.path_hf32.isValid()) meta.tuser_size = meta.tuser_size - 384;
+            if (hdr.path_hf16.isValid()) meta.tuser_size = meta.tuser_size - 192;
+            if (hdr.path_hf8.isValid()) meta.tuser_size = meta.tuser_size - 96;
+            if (hdr.path_hf4.isValid()) meta.tuser_size = meta.tuser_size - 48;
+            if (hdr.path_hf2.isValid()) meta.tuser_size = meta.tuser_size - 24;
+            if (hdr.path_hf.isValid()) meta.tuser_size = meta.tuser_size - 12;
+
+            if (hdr.scion_hbh_ext.isValid()) {
+                bit<16> hbh_len = 2 + ((bit<16>)hdr.scion_hbh_ext.ext_len * 4) + 2;
+                meta.tuser_size = meta.tuser_size - hbh_len;
+            }
+            if (hdr.scion_e2e_ext.isValid()) {
+                bit<16> e2e_len = 2 + ((bit<16>)hdr.scion_e2e_ext.ext_len * 4) + 2;
+                meta.tuser_size = meta.tuser_size - e2e_len;
+            }
+
             // Check and translate source address
             if (hdr.scion_src_host_4.isValid()) {
                 tab_source_translation_46.apply();
             } else if (hdr.scion_src_host_16.isValid()) {
-                sc_asn_t asn = (bit<48>)(hdr.scion_src_host_16.addr[106:88]);
-                if (hdr.scion_src_host_16.addr[107:107] == 0) {
-                    asn[47:32] = 0; // BGP ASN
-                } else {
-                    asn[47:32] = 2; // Public SCION ASN
+                sc_asn_t asn;
+                if (hdr.scion_src_host_16.addr[107:107] == 0) { // BGP ASN
+                    asn = 29w0 ++ hdr.scion_src_host_16.addr[106:88];
+                } else { // if (hdr.scion_src_host_16.addr[107:104] == 14) { // Public SCION ASN
+                    asn = 16w2 ++ hdr.scion_src_host_16.addr[103:72];
                 }
                 if (extract_prefix(hdr.scion_src_host_16.addr) == SCION_PREFIX
                  && hdr.scion_common.src_isd == (bit<16>)(extract_isd(hdr.scion_src_host_16.addr))

@@ -21,8 +21,7 @@ set p4_dir [file normalize .]
 set p4_src0 ingress-classifier.p4
 set p4_src1 ingress-translator.p4
 set p4_src2 egress-translator.p4
-set p4_src3 egress_checksum.p4
-
+set p4_src3 egress-checksum.p4
 
 # These MUST stay in sync with box_250mhz_address_map.v's
 # C_*_BASE_ADDR localparams and box_250mhz_axi_crossbar.tcl's
@@ -75,7 +74,7 @@ set_property -dict [list \
     CONFIG.DECODER_REG {1} \
     CONFIG.HAS_TKEEP {1} \
     CONFIG.HAS_TLAST {1} \
-    CONFIG.TUSER_WIDTH {27} \
+    CONFIG.TUSER_WIDTH {26} \
 ] [get_ips axis_switch_0]
 
 generate_target all [get_ips axis_switch_0]
@@ -89,7 +88,7 @@ set_property -dict [list \
     CONFIG.HAS_TLAST {1} \
     CONFIG.HAS_TREADY {1} \
     CONFIG.HAS_TSTRB {0} \
-    CONFIG.TUSER_WIDTH {0} \
+    CONFIG.TUSER_WIDTH {16} \
 ] [get_ips axis_data_fifo_0]
 generate_target all [get_ips axis_data_fifo_0]
 synth_ip [get_ips axis_data_fifo_0]
@@ -102,7 +101,7 @@ set_property -dict [list \
     CONFIG.HAS_TLAST {1} \
     CONFIG.HAS_TREADY {1} \
     CONFIG.HAS_TSTRB {0} \
-    CONFIG.TUSER_WIDTH {0} \
+    CONFIG.TUSER_WIDTH {16} \
 ] [get_ips axis_data_fifo_1]
 generate_target all [get_ips axis_data_fifo_1]
 synth_ip [get_ips axis_data_fifo_1]

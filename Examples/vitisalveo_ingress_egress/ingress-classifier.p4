@@ -282,7 +282,7 @@ typedef bit<10> payload_offset_t;
 
 struct metadata_t
 {
-    bit<16>          size;
+    bit<16>          tuser_size;
     bit<1>           is_scion;
     bit<6>           hop_fields;
     payload_offset_t payload_offset;
@@ -318,7 +318,7 @@ parser IngrClassParser(
         // Clear input metadata that we will never read
         meta.is_scion = 0;
         meta.hop_fields = 0;
-        meta.payload_offset = 54;  // updated value
+        meta.payload_offset = 10w1023;
 
         pkt.extract(hdr.ether);
         transition select (hdr.ether.etype) {
@@ -565,7 +565,7 @@ control IngrClassProcessing(
         // ingress translator's parser.
 
         // Drop packets that are too large for the checksum unit
-        if (meta.size > MAX_PACKET_SIZE) {
+        if (meta.tuser_size > MAX_PACKET_SIZE) {
             dropPacket();
             return;
         }
